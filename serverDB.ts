@@ -899,6 +899,28 @@ export const dbActions = {
     return diskDb.users;
   },
 
+  updateUserPassword: async (email: string, passwordHash: string): Promise<IUser | null> => {
+    const emailKey = email.toLowerCase().trim();
+    if (isMongoConnected) {
+      const updated = await UserModel.findOneAndUpdate(
+        { email: emailKey },
+        { $set: { passwordHash } },
+        { new: true }
+      ).lean();
+      return updated;
+    }
+
+    const userIndex = diskDb.users.findIndex((user) => user.email.toLowerCase().trim() === emailKey);
+    if (userIndex === -1) return null;
+
+    diskDb.users[userIndex] = {
+      ...diskDb.users[userIndex],
+      passwordHash
+    };
+    saveToDisk();
+    return diskDb.users[userIndex];
+  },
+
   // --- DEPARTMENTS SECTION ---
   getDepartments: async (): Promise<IDepartment[]> => {
     if (isMongoConnected) {

@@ -1,10 +1,11 @@
-import React from 'react';
-import { Building2, Briefcase, IdCard, Mail, Shield, User2, Users, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { Building2, Briefcase, IdCard, KeyRound, Mail, Shield, User2, Users, X } from 'lucide-react';
 import { UserSession } from '../types';
 
 interface UserProfileModalProps {
   isOpen: boolean;
   user: UserSession | null;
+  token: string | null;
   onClose: () => void;
 }
 
@@ -24,10 +25,63 @@ const profileFields = (user: UserSession | null) => {
   ];
 };
 
-export default function UserProfileModal({ isOpen, user, onClose }: UserProfileModalProps) {
+export default function UserProfileModal({ isOpen, user, token, onClose }: UserProfileModalProps) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+
   if (!isOpen || !user) return null;
 
   const fields = profileFields(user);
+
+  const resetPasswordForm = () => {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) {
+      setPasswordError('Your session has expired. Please sign in again.');
+      return;
+    }
+
+    setPasswordError(null);
+    setPasswordSuccess(null);
+    setIsSavingPassword(true);
+
+    try {
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+          confirmPassword
+        })
+      });
+
+      const rawResponse = await response.text();
+      const data = rawResponse ? JSON.parse(rawResponse) : {};
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to update password.');
+      }
+
+      setPasswordSuccess(data.message || 'Password updated successfully.');
+      resetPasswordForm();
+    } catch (error: any) {
+      setPasswordError(error.message || 'Unable to update password.');
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 px-3 sm:px-4 backdrop-blur-sm">
@@ -44,7 +98,7 @@ export default function UserProfileModal({ isOpen, user, onClose }: UserProfileM
               <div>
                 <h2 className="text-xl sm:text-2xl font-black tracking-[-0.03em] break-words">{user.name}</h2>
                 <p className="mt-1 text-sm text-slate-200">
-                  Database-mapped profile details are visible here. Editing is currently locked.
+                  View your account details and update your password securely from this panel.
                 </p>
               </div>
             </div>
@@ -61,7 +115,7 @@ export default function UserProfileModal({ isOpen, user, onClose }: UserProfileM
 
         <div className="bg-slate-50 px-4 sm:px-6 py-5">
           <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800">
-            This profile is read-only for now. All values shown below are coming from the current database/session mapping.
+            Your profile information is shown below for your reference. You can update your password here at any time.
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -74,6 +128,86 @@ export default function UserProfileModal({ isOpen, user, onClose }: UserProfileM
                 <div className="break-words text-sm font-semibold text-slate-800">{value}</div>
               </div>
             ))}
+          </div>
+
+          <div className="mt-5 rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+            <div className="mb-4 flex items-center gap-2 text-sm font-bold text-slate-800">
+              <KeyRound className="h-4 w-4 text-blue-600" />
+              <span>Change Password</span>
+            </div>
+
+            {passwordError && (
+              <div className="mb-3 rounded-xl border border-rose-100 bg-rose-50 px-3.5 py-2.5 text-xs text-rose-700">
+                {passwordError}
+              </div>
+            )}
+
+            {passwordSuccess && (
+              <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3.5 py-2.5 text-xs text-emerald-700">
+                {passwordSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleChangePassword} className="space-y-3">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                    Current Password
+                  </label>
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    required
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    placeholder="Enter your current password"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                    New Password
+                  </label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    placeholder="Minimum 8 characters"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                    Confirm New Password
+                  </label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    placeholder="Re-enter new password"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-slate-500">
+                  After changing your password, use the new password for future sign-ins.
+                </p>
+                <button
+                  type="submit"
+                  disabled={isSavingPassword}
+                  className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                >
+                  {isSavingPassword ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </div>

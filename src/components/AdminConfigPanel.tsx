@@ -1,27 +1,31 @@
 import React, { useState, useMemo } from 'react';
-import { Department, ComplaintCategory, SLAUnit, TicketPriority } from '../types';
-import { Landmark, Plus, Trash2, ShieldCheck, FolderPlus, Clock, AlertCircle, Database, RefreshCw } from 'lucide-react';
+import { Department, ComplaintCategory, SLAUnit, TicketPriority, UserSession } from '../types';
+import { Landmark, Plus, Trash2, ShieldCheck, FolderPlus, Clock, AlertCircle, Database, RefreshCw, KeyRound, Search } from 'lucide-react';
 
 interface AdminConfigPanelProps {
   departments: Department[];
   categories: ComplaintCategory[];
+  companyUsers: UserSession[];
   dbType: string;
   onAddDepartment: (name: string) => void;
   onAddCategory: (deptId: string, name: string, defaultValue: number, defaultUnit: SLAUnit, defaultPriority: TicketPriority) => void;
   onDeleteDepartment?: (id: string) => void;
   onDeleteCategory?: (id: string) => void;
   onMigrateDatabase: () => Promise<{ success: boolean; migratedCount?: any; error?: string }>;
+  onResetEmployeePassword: (email: string) => Promise<{ success: boolean; message?: string; error?: string }>;
 }
 
 export default function AdminConfigPanel({
   departments,
   categories,
+  companyUsers,
   dbType,
   onAddDepartment,
   onAddCategory,
   onDeleteDepartment,
   onDeleteCategory,
-  onMigrateDatabase
+  onMigrateDatabase,
+  onResetEmployeePassword
 }: AdminConfigPanelProps) {
   const [newDeptName, setNewDeptName] = useState('');
   const [selectedDeptId, setSelectedDeptId] = useState<string>(departments[0]?.id || '');
@@ -44,6 +48,12 @@ export default function AdminConfigPanel({
       emails?: number;
     };
     error?: string;
+  } | null>(null);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [resettingEmail, setResettingEmail] = useState<string | null>(null);
+  const [passwordResetStatus, setPasswordResetStatus] = useState<{
+    type: 'success' | 'error';
+    message: string;
   } | null>(null);
 
   const handleMigrate = async () => {
@@ -77,6 +87,23 @@ export default function AdminConfigPanel({
     return categories.filter(c => c.departmentId === selectedDeptId);
   }, [categories, selectedDeptId]);
 
+  const resettableEmployees = useMemo(() => {
+    const query = employeeSearch.trim().toLowerCase();
+    return companyUsers
+      .filter((user) => user.role !== 'Admin')
+      .filter((user) => user.employeeId)
+      .filter((user) => {
+        if (!query) return true;
+        return (
+          user.name.toLowerCase().includes(query) ||
+          user.email.toLowerCase().includes(query) ||
+          (user.employeeId || '').toLowerCase().includes(query) ||
+          (user.departmentName || '').toLowerCase().includes(query)
+        );
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [companyUsers, employeeSearch]);
+
   const handleCreateDept = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDeptName.trim()) return;
@@ -89,6 +116,39 @@ export default function AdminConfigPanel({
     if (!newCatName.trim() || !selectedDeptId) return;
     onAddCategory(selectedDeptId, newCatName.trim(), slaValue, slaUnit, defaultPriority);
     setNewCatName('');
+  };
+
+  const handleResetEmployeePassword = async (user: UserSession) => {
+    if (!user.employeeId) return;
+
+    const confirmed = confirm(
+      `Reset ${user.name}'s password to the default Employee ID password (${user.employeeId})?`
+    );
+    if (!confirmed) return;
+
+    setResettingEmail(user.email);
+    setPasswordResetStatus(null);
+    try {
+      const result = await onResetEmployeePassword(user.email);
+      if (result.success) {
+        setPasswordResetStatus({
+          type: 'success',
+          message: result.message || `${user.name}'s password was reset successfully.`
+        });
+      } else {
+        setPasswordResetStatus({
+          type: 'error',
+          message: result.error || 'Employee password reset failed.'
+        });
+      }
+    } catch (error: any) {
+      setPasswordResetStatus({
+        type: 'error',
+        message: error.message || 'Employee password reset failed.'
+      });
+    } finally {
+      setResettingEmail(null);
+    }
   };
 
   return (
@@ -173,6 +233,7 @@ export default function AdminConfigPanel({
       </div>
 
       {/* Database Management & Hand-Off card */}
+      {false && (
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-4">
         <div className="flex items-center space-x-2 pb-2 border-b border-gray-50">
           <Database className="w-5 h-5 text-blue-500 font-bold" />
@@ -263,6 +324,73 @@ export default function AdminConfigPanel({
               )}
               {migrationStatus.error && <p className="text-[10px] mt-1 text-rose-700">{migrationStatus.error}</p>}
             </div>
+          )}
+        </div>
+      </div>
+      )}
+
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-4">
+        <div className="flex items-center space-x-2 pb-2 border-b border-gray-50">
+          <KeyRound className="w-5 h-5 text-indigo-500" />
+          <h3 className="font-bold text-gray-800 text-sm">Employee Password Reset</h3>
+        </div>
+
+        <p className="text-[11px] leading-relaxed text-gray-500">
+          If an employee forgets their password, reset it here and their default password will become their Employee ID again.
+        </p>
+
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={employeeSearch}
+            onChange={(e) => setEmployeeSearch(e.target.value)}
+            placeholder="Search by name, email, employee ID, or department"
+            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs"
+          />
+        </div>
+
+        {passwordResetStatus && (
+          <div className={`rounded-xl border px-3 py-2.5 text-xs ${
+            passwordResetStatus.type === 'success'
+              ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
+              : 'border-rose-100 bg-rose-50 text-rose-800'
+          }`}>
+            {passwordResetStatus.message}
+          </div>
+        )}
+
+        <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+          {resettableEmployees.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-xs text-gray-400">
+              No employee accounts matched your search.
+            </div>
+          ) : (
+            resettableEmployees.map((user) => (
+              <div key={user.email} className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
+                <div className="flex flex-col gap-3">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-800">{user.name}</span>
+                      <span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                        {user.employeeId}
+                      </span>
+                    </div>
+                    <p className="break-all text-[11px] font-mono text-gray-500">{user.email}</p>
+                    <p className="text-[11px] text-gray-400">{user.departmentName || 'No department assigned'}</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleResetEmployeePassword(user)}
+                    disabled={resettingEmail === user.email}
+                    className="w-full rounded-xl border border-indigo-100 bg-white px-3 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {resettingEmail === user.email ? 'Resetting Password...' : 'Reset to Employee ID'}
+                  </button>
+                </div>
+              </div>
+            ))
           )}
         </div>
       </div>

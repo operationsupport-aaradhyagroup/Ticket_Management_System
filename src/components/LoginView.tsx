@@ -321,7 +321,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               </button>
 
               <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
-                Employee login rule: use the imported <strong className="font-semibold">email address</strong> as username and the <strong className="font-semibold">Employee ID</strong> as the default password.
+                To sign in, enter your registered <strong className="font-semibold">email address</strong> and use your <strong className="font-semibold">Employee ID</strong> as the default password.
               </div>
 
               {showEmployees && (

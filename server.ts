@@ -730,6 +730,88 @@ async function startServer() {
     res.json({ user: req.user });
   });
 
+  app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
+    try {
+      const { currentPassword, newPassword, confirmPassword } = req.body;
+
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        res.status(400).json({ error: 'Current password, new password, and confirmation are required.' });
+        return;
+      }
+
+      if (newPassword.length < 8) {
+        res.status(400).json({ error: 'New password must be at least 8 characters long.' });
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        res.status(400).json({ error: 'New password and confirmation do not match.' });
+        return;
+      }
+
+      if (currentPassword === newPassword) {
+        res.status(400).json({ error: 'New password must be different from your current password.' });
+        return;
+      }
+
+      const user = await dbActions.findUserByEmail(req.user!.email);
+      if (!user) {
+        res.status(404).json({ error: 'User account not found.' });
+        return;
+      }
+
+      const isPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!isPasswordValid) {
+        res.status(401).json({ error: 'Current password is incorrect.' });
+        return;
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(newPassword, salt);
+      await dbActions.updateUserPassword(user.email, passwordHash);
+
+      res.json({ message: 'Password updated successfully.' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Password update failed.' });
+    }
+  });
+
+  app.post('/api/admin/reset-user-password', authenticateToken, async (req, res) => {
+    try {
+      if (req.user?.role !== 'Admin') {
+        res.status(403).json({ error: 'Only admins can reset employee passwords.' });
+        return;
+      }
+
+      const { email } = req.body;
+      if (!email) {
+        res.status(400).json({ error: 'Employee email is required.' });
+        return;
+      }
+
+      const user = await dbActions.findUserByEmail(email);
+      if (!user) {
+        res.status(404).json({ error: 'Employee account not found.' });
+        return;
+      }
+
+      if (!user.employeeId) {
+        res.status(400).json({ error: 'This account does not have an Employee ID default password to reset to.' });
+        return;
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(user.employeeId, salt);
+      await dbActions.updateUserPassword(user.email, passwordHash);
+
+      res.json({
+        message: `Password reset successfully. ${user.name} can now sign in using Employee ID ${user.employeeId}.`
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Employee password reset failed.' });
+    }
+  });
+
   // Users: GET (all company users)
   app.get('/api/users', authenticateToken, async (req, res) => {
     try {

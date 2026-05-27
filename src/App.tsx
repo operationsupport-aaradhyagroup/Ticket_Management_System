@@ -418,6 +418,34 @@ export default function App() {
     }
   };
 
+  const handleResetEmployeePassword = async (email: string) => {
+    if (!token) return { success: false, error: 'Admin session is expired or not authenticated.' };
+    try {
+      setDataLoading(true);
+      const res = await fetch('/api/admin/reset-user-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ email })
+      });
+
+      const rawResponse = await res.text();
+      const data = rawResponse ? JSON.parse(rawResponse) : {};
+
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Password reset failed.' };
+      }
+
+      return { success: true, message: data.message || 'Password reset successfully.' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Password reset failed.' };
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
   const handleAddNewCategory = async (deptId: string, name: string, defaultSlaValue: number, defaultSlaUnit: SLAUnit, defaultPriority: TicketPriority) => {
     if (!token) return;
     try {
@@ -829,12 +857,14 @@ export default function App() {
               <AdminConfigPanel
                 departments={departments}
                 categories={categories}
+                companyUsers={companyUsers}
                 dbType={dbType}
                 onAddDepartment={handleAddNewDepartment}
                 onAddCategory={handleAddNewCategory}
                 onDeleteDepartment={handleDeleteDepartment}
                 onDeleteCategory={handleDeleteCategory}
                 onMigrateDatabase={handleMigrateDatabase}
+                onResetEmployeePassword={handleResetEmployeePassword}
               />
             )}
           </div>
@@ -860,6 +890,7 @@ export default function App() {
       <UserProfileModal
         isOpen={isProfileModalOpen}
         user={profileUser}
+        token={token}
         onClose={() => setIsProfileModalOpen(false)}
       />
 
