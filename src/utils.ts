@@ -1,0 +1,157 @@
+import { Ticket, SLAUnit, SLAStatus } from './types';
+
+/**
+ * Calculates the SLA due date based on starting date and duration
+ */
+export function calculateDueDate(createdAtStr: string, value: number, unit: SLAUnit): string {
+  const date = new Date(createdAtStr);
+  if (isNaN(date.getTime())) {
+    return new Date().toISOString();
+  }
+  
+  switch (unit) {
+    case 'minutes':
+      date.setMinutes(date.getMinutes() + value);
+      break;
+    case 'hours':
+      date.setHours(date.getHours() + value);
+      break;
+    case 'days':
+      date.setDate(date.getDate() + value);
+      break;
+  }
+  return date.toISOString();
+}
+
+/**
+ * Helper to convert duration to minutes for percentage thresholds
+ */
+export function durationInMinutes(value: number, unit: SLAUnit): number {
+  switch (unit) {
+    case 'minutes':
+      return value;
+    case 'hours':
+      return value * 60;
+    case 'days':
+      return value * 24 * 60;
+  }
+}
+
+/**
+ * Dynamically computes status of a ticket relative to raw reference time
+ */
+export function computeSLAStatus(ticket: Ticket, referenceTime: Date): SLAStatus {
+  // If ticket is resolved or closed, status is frozen
+  if (ticket.status === 'Resolved' || ticket.status === 'Closed') {
+    // If ticket was resolved BEFORE due date, it is 'Within SLA'.
+    // If it was resolved AFTER due date, it is 'SLA Breached'.
+    const stopTimeStr = ticket.resolvedAt || referenceTime.toISOString();
+    const stopTime = new Date(stopTimeStr);
+    const dueDate = new Date(ticket.slaDueDate);
+    return stopTime > dueDate ? 'SLA Breached' : 'Within SLA';
+  }
+
+  const dueDate = new Date(ticket.slaDueDate);
+  const now = referenceTime;
+
+  if (now >= dueDate) {
+    return 'SLA Breached';
+  }
+
+  // Calculate remaining minutes
+  const remainingMins = (dueDate.getTime() - now.getTime()) / (1000 * 60);
+  const totalMins = durationInMinutes(ticket.slaDurationValue, ticket.slaDurationUnit);
+
+  // Near breach thresholds:
+  // - If it has less than 20% of SLA time remaining
+  // - Or if remaining minutes are lower than specific standard cutoffs (e.g., 10 mins for mins, 1 hour for hours, 6 hours for days)
+  const percentRemaining = (remainingMins / totalMins) * 100;
+
+  let isNearBreach = false;
+  if (percentRemaining <= 25) {
+    isNearBreach = true;
+  } else {
+    // Hard cutoff cases
+    if (ticket.slaDurationUnit === 'minutes' && remainingMins <= 5) {
+      isNearBreach = true;
+    } else if (ticket.slaDurationUnit === 'hours' && remainingMins <= 60) {
+      isNearBreach = true;
+    } else if (ticket.slaDurationUnit === 'days' && remainingMins <= 360) { // 6 hours
+      isNearBreach = true;
+    }
+  }
+
+  return isNearBreach ? 'Near SLA Breach' : 'Within SLA';
+}
+
+export function isTicketAssignedToUser(ticket: Ticket, user: { email: string; name: string } | null): boolean {
+  if (!user || !ticket.assignedAgent || ticket.assignedAgent === 'Unassigned') return false;
+
+  if (ticket.assignedAgentEmail) {
+    return ticket.assignedAgentEmail.toLowerCase() === user.email.toLowerCase();
+  }
+  
+  const agentNameLower = ticket.assignedAgent.toLowerCase();
+  const userNameLower = user.name.toLowerCase();
+  
+  return agentNameLower.includes(userNameLower) || userNameLower.includes(agentNameLower);
+}
+
+export function isTicketRaisedByUser(ticket: Ticket, user: { email: string; name: string } | null): boolean {
+  if (!user || !ticket.creatorEmail) return false;
+  return ticket.creatorEmail.toLowerCase() === user.email.toLowerCase();
+}
+
+/**
+ * Format remaining countdown string
+ */
+export function formatSLACountdown(dueDateStr: string, referenceTime: Date, status: string): { text: string; isOverdue: boolean; percent: number; seconds: number } {
+  const dueDate = new Date(dueDateStr);
+  const now = referenceTime;
+  const diffMs = dueDate.getTime() - now.getTime();
+  
+  if (status === 'Resolved' || status === 'Closed') {
+    return { text: 'Ticket Resolved', isOverdue: false, percent: 100, seconds: 0 };
+  }
+
+  if (diffMs <= 0) {
+    const overdueMs = Math.abs(diffMs);
+    const days = Math.floor(overdueMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((overdueMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const mins = Math.floor((overdueMs % (1000 * 60 * 60)) / (1000 * 60));
+    const secs = Math.floor((overdueMs % (1000 * 60)) / 1000);
+
+    let parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    parts.push(`${mins}m`);
+    parts.push(`${secs}s`);
+
+    return { 
+      text: `${parts.join(' ')} overdue`, 
+      isOverdue: true, 
+      percent: 0,
+      seconds: -Math.floor(overdueMs / 1000)
+    };
+  } else {
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    const secs = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+    let parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    parts.push(`${mins}m`);
+    parts.push(`${secs}s`);
+
+    const seconds = Math.floor(diffMs / 1000);
+
+    return { 
+      text: parts.join(' '), 
+      isOverdue: false, 
+      percent: 100, // will compute based on ticket context elsewhere
+      seconds
+    };
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Aaradhya Group Ticket Management System",
+  "description": "A comprehensive Aaradhya Group system for managing department-wise tickets with custom service level agreements (SLAs), near-breach alerts, countdowns, and performance dashboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
