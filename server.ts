@@ -626,6 +626,26 @@ async function startServer() {
     runReminderSweep();
   }, 15 * 60 * 1000);
 
+
+
+// Cron route for cron-job.org
+app.get('/cron', async (req, res) => {
+  try {
+    console.log('Cron ping received:', new Date().toISOString());
+
+    // optional: run reminder sweep
+    await runReminderSweep();
+
+    res.status(200).send('OK');
+  } catch (error: any) {
+    console.error('Cron failed:', error.message);
+    res.status(500).send('Error');
+  }
+});
+
+
+  
+
   // 2. BACKEND API ENDPOINTS
   app.get('/api/health', (req, res) => {
     res.json({
