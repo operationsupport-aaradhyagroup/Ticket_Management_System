@@ -100,27 +100,27 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
             </div>
 
             <h1 className="mt-6 max-w-lg text-5xl font-black tracking-tight leading-[1.05] text-white">
-              Resolve faster with a sharper Aaradhya Group operations desk.
+              Centralize internal service requests with a dependable operations support desk.
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-8 text-slate-200/88">
-              A cleaner frontline for complaint intake, department routing, assignment visibility, and SLA-driven escalation management.
+              Built for real teams to log issues, route them to the right department, track ownership, and keep every request moving within defined SLA timelines.
             </p>
 
             <div className="mt-8 grid grid-cols-3 gap-4">
               <div className="rounded-[1.75rem] border border-white/18 bg-white/10 p-5 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.16)]">
                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-slate-300">Routing</p>
                 <p className="mt-3 text-3xl font-black text-white">6</p>
-                <p className="mt-2 text-sm text-slate-200/80">Departments mapped into one workflow.</p>
+                <p className="mt-2 text-sm text-slate-200/80">Requests routed to the right business function from first submission.</p>
               </div>
               <div className="rounded-[1.75rem] border border-white/18 bg-white/10 p-5 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.16)]">
                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-slate-300">Monitoring</p>
                 <p className="mt-3 text-3xl font-black text-white">24/7</p>
-                <p className="mt-2 text-sm text-slate-200/80">Live SLA countdowns and alerts.</p>
+                <p className="mt-2 text-sm text-slate-200/80">Real-time SLA tracking for open operational requests.</p>
               </div>
               <div className="rounded-[1.75rem] border border-white/18 bg-white/10 p-5 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.16)]">
                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-slate-300">Escalation</p>
                 <p className="mt-3 text-3xl font-black text-white">Auto</p>
-                <p className="mt-2 text-sm text-slate-200/80">Triggered when SLA windows are crossed.</p>
+                <p className="mt-2 text-sm text-slate-200/80">Priority exceptions moved to supervisors before service delays grow.</p>
               </div>
             </div>
 
@@ -131,14 +131,14 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   <div className="h-2.5 w-28 rounded-full bg-white/20">
                     <div className="h-2.5 w-20 rounded-full bg-gradient-to-r from-blue-400 via-cyan-300 to-emerald-300" />
                   </div>
-                  <span className="text-sm font-semibold text-white">Live Monitoring</span>
+                  <span className="text-sm font-semibold text-white">Active Queue Tracking</span>
                 </div>
               </div>
 
               <div className="rounded-[1.5rem] border border-white/18 bg-slate-950/25 px-5 py-4 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.16)]">
                 <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-slate-300">Enterprise Security</p>
                 <p className="mt-2 max-w-[220px] text-sm leading-6 text-slate-100/90">
-                  Role-based access for admins, agents, and complaint submitters.
+                  Controlled access for admins, department owners, and request initiators.
                 </p>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import { Ticket, SLAUnit, SLAStatus } from './types';
+import { Ticket, SLAUnit, SLAStatus, UserSession } from './types';
 
 /**
  * Calculates the SLA due date based on starting date and duration
@@ -88,13 +88,105 @@ export function isTicketAssignedToUser(ticket: Ticket, user: { email: string; na
   if (!user || !ticket.assignedAgent || ticket.assignedAgent === 'Unassigned') return false;
 
   if (ticket.assignedAgentEmail) {
-    return ticket.assignedAgentEmail.toLowerCase() === user.email.toLowerCase();
+    if (ticket.assignedAgentEmail.toLowerCase() === user.email.toLowerCase()) {
+      return true;
+    }
   }
   
   const agentNameLower = ticket.assignedAgent.toLowerCase();
   const userNameLower = user.name.toLowerCase();
-  
-  return agentNameLower.includes(userNameLower) || userNameLower.includes(agentNameLower);
+
+  if (agentNameLower.includes(userNameLower) || userNameLower.includes(agentNameLower)) {
+    return true;
+  }
+
+  return wasTicketHistoricallyAssignedToUser(ticket, user);
+}
+
+function doesAssignedNameMatchUser(assignedName: string, user: { email: string; name: string } | null): boolean {
+  if (!user || !assignedName.trim()) return false;
+
+  const assignedNameLower = assignedName.trim().toLowerCase();
+  const userNameLower = user.name.trim().toLowerCase();
+
+  return (
+    assignedNameLower === userNameLower ||
+    assignedNameLower.includes(userNameLower) ||
+    userNameLower.includes(assignedNameLower)
+  );
+}
+
+function findUserByAssignedName(users: UserSession[], assignedName: string): UserSession | null {
+  if (!assignedName.trim()) return null;
+
+  return (
+    users.find((user) => doesAssignedNameMatchUser(assignedName, user)) ||
+    null
+  );
+}
+
+export function resolveAccountableAssignedUser(ticket: Ticket, users: UserSession[]): UserSession | null {
+  if (ticket.assignedAgentEmail) {
+    const directEmailMatch = users.find(
+      (user) => user.email.toLowerCase() === ticket.assignedAgentEmail?.toLowerCase()
+    );
+    if (directEmailMatch) {
+      return directEmailMatch;
+    }
+  }
+
+  if (ticket.assignedAgent && ticket.assignedAgent !== 'Unassigned') {
+    const directNameMatch = findUserByAssignedName(users, ticket.assignedAgent);
+    if (directNameMatch) {
+      return directNameMatch;
+    }
+  }
+
+  const historyEntries = [...(ticket.history || [])].reverse();
+  for (const entry of historyEntries) {
+    const action = entry.action || '';
+    if (/Ticket escalated and reassigned to/i.test(action)) continue;
+
+    const explicitAssignmentMatch =
+      action.match(/Assigned agent updated to '([^']+)'/i) ||
+      action.match(/Assigned to\s+(.+?)\s*&\s*marked/i) ||
+      action.match(/and assigned to\s+(.+)$/i);
+
+    const assignedName = explicitAssignmentMatch?.[1]?.trim();
+    if (!assignedName || assignedName.toLowerCase() === 'unassigned') continue;
+
+    const historicalMatch = findUserByAssignedName(users, assignedName);
+    if (historicalMatch) {
+      return historicalMatch;
+    }
+  }
+
+  return null;
+}
+
+export function wasTicketHistoricallyAssignedToUser(ticket: Ticket, user: { email: string; name: string } | null): boolean {
+  if (!user || !ticket.isEscalated) {
+    return false;
+  }
+
+  const userNameLower = user.name.toLowerCase();
+  const historyEntries = [...(ticket.history || [])].reverse();
+  for (const entry of historyEntries) {
+    const action = entry.action || '';
+    if (/Ticket escalated and reassigned to/i.test(action)) continue;
+
+    const explicitAssignmentMatch =
+      action.match(/Assigned agent updated to '([^']+)'/i) ||
+      action.match(/Assigned to\s+(.+?)\s*&\s*marked/i) ||
+      action.match(/and assigned to\s+(.+)$/i);
+
+    const assignedName = explicitAssignmentMatch?.[1]?.trim();
+    if (!assignedName || assignedName.toLowerCase() === 'unassigned') continue;
+
+    return doesAssignedNameMatchUser(assignedName, user);
+  }
+
+  return false;
 }
 
 export function isTicketRaisedByUser(ticket: Ticket, user: { email: string; name: string } | null): boolean {

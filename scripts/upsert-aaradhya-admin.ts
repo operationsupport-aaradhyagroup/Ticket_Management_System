@@ -39,10 +39,11 @@ async function main() {
     { upsert: true }
   );
 
-  const savedUser = await UserModel.findOne(
-    { email: 'aaradhya.admin@company.com' },
-    { email: 1, name: 1, role: 1, departmentId: 1 }
-  ).lean();
+  const savedUser = await UserModel.findOne()
+    .where('email')
+    .equals('aaradhya.admin@company.com')
+    .select('email name role departmentId')
+    .lean();
 
   console.log(JSON.stringify(savedUser));
   await mongoose.disconnect();

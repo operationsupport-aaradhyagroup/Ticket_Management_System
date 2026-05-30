@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Department, ComplaintCategory, Ticket, UserSession, SLAUnit, TicketStatus, SLAStatus, TicketPriority, SentEmail } from './types';
-import { computeSLAStatus, isTicketAssignedToUser, isTicketRaisedByUser } from './utils';
+import { computeSLAStatus, isTicketAssignedToUser, isTicketRaisedByUser, wasTicketHistoricallyAssignedToUser } from './utils';
 
 // Import our custom modules
 import LoginView from './components/LoginView';
@@ -55,7 +55,7 @@ export default function App() {
   const [apiError, setApiError] = useState<string | null>(null);
 
   // Active UI Navigation tabs: 'all' | 'raised' | 'assigned' | 'dashboard' | 'config'
-  const [activeTab, setActiveTab] = useState<'all' | 'raised' | 'assigned' | 'dashboard' | 'config'>('raised');
+  const [activeTab, setActiveTab] = useState<'all' | 'raised' | 'assigned' | 'breached' | 'dashboard' | 'config'>('raised');
   
   // Selected ticket for detailed view
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
@@ -259,8 +259,14 @@ export default function App() {
     if (activeTab === 'assigned') {
       return tickets.filter(t => isTicketAssignedToUser(t, currentUser));
     }
+    if (activeTab === 'breached') {
+      return tickets.filter((ticket) =>
+        wasTicketHistoricallyAssignedToUser(ticket, currentUser) &&
+        computeSLAStatus(ticket, currentSimulatedTime) === 'SLA Breached'
+      );
+    }
     return tickets;
-  }, [tickets, activeTab, currentUser]);
+  }, [tickets, activeTab, currentUser, currentSimulatedTime]);
 
   const profileUser = useMemo(() => {
     if (!currentUser) return null;
@@ -281,14 +287,37 @@ export default function App() {
         body: JSON.stringify(newTicket)
       });
 
-      if (!res.ok) {
-        const fail = await res.json();
-        throw new Error(fail.error || 'Ticket creation failed on backend.');
+      const rawResponse = await res.text();
+      let createdPayload: any = {};
+      try {
+        createdPayload = rawResponse ? JSON.parse(rawResponse) : {};
+      } catch {
+        createdPayload = {};
       }
 
-      await fetchDbData(); // Refresh list cleanly
+      if (!res.ok) {
+        throw new Error(createdPayload.error || rawResponse || 'Ticket creation failed on backend.');
+      }
+
+      if (createdPayload?.ticket) {
+        setTickets((prev) => [createdPayload.ticket, ...prev]);
+      }
+      if (createdPayload?.email) {
+        setSentEmails((prev) => [createdPayload.email, ...prev]);
+      }
       setIsCreateModalOpen(false);
+
+      try {
+        await fetchDbData(); // Refresh list cleanly when available
+      } catch (refreshError) {
+        console.warn('Ticket created, but dashboard refresh failed.', refreshError);
+      }
     } catch (err: any) {
+      if (err?.message === 'Failed to fetch') {
+        console.warn('Ticket create flow reported a network error after submission. If the ticket appears in the list, the create likely succeeded.', err);
+        await fetchDbData();
+        return;
+      }
       alert(err.message);
     } finally {
       setDataLoading(false);
@@ -720,6 +749,29 @@ export default function App() {
               </button>
             )}
 
+            {currentUser?.role !== 'Admin' && (
+              <button
+                id="tab-btn-breached"
+                onClick={() => {
+                  setActiveTab('breached');
+                  setSelectedTicketId(null);
+                }}
+                className={`px-3 h-full flex items-center space-x-2 text-xs font-bold border-b-2 transition-all shrink-0 ${
+                  activeTab === 'breached' && !selectedTicketId
+                    ? 'border-blue-600 text-blue-600 font-extrabold'
+                    : 'border-transparent text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                <AlertCircle className="w-4 h-4 text-rose-500" />
+                <span>
+                  My Breached Tickets ({tickets.filter((ticket) =>
+                    wasTicketHistoricallyAssignedToUser(ticket, currentUser) &&
+                    computeSLAStatus(ticket, currentSimulatedTime) === 'SLA Breached'
+                  ).length})
+                </span>
+              </button>
+            )}
+
             {/* 4. SLA Analytics Dashboard (Admin Only) */}
             {currentUser?.role === 'Admin' && (
               <button
@@ -832,7 +884,7 @@ export default function App() {
         ) : (
           /* Main view Router tabs */
           <div>
-            {(activeTab === 'all' || activeTab === 'raised' || activeTab === 'assigned') && (
+            {(activeTab === 'all' || activeTab === 'raised' || activeTab === 'assigned' || activeTab === 'breached') && (
               <TicketList
                 tickets={visibleTickets}
                 departments={departments}
@@ -848,8 +900,10 @@ export default function App() {
                 tickets={tickets}
                 departments={departments}
                 categories={categories}
+                companyUsers={companyUsers}
                 referenceTime={currentSimulatedTime}
                 sentEmails={sentEmails}
+                onSelectTicket={(ticket) => setSelectedTicketId(ticket.id)}
               />
             )}
 

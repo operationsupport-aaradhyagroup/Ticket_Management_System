@@ -1,23 +1,35 @@
 import React, { useMemo, useState } from 'react';
-import { Ticket, Department, ComplaintCategory, SentEmail } from '../types';
+import { Ticket, Department, ComplaintCategory, SentEmail, UserSession } from '../types';
 import { computeSLAStatus } from '../utils';
-import { ShieldAlert, AlertTriangle, CheckCircle, BarChart3, Users, Landmark, Clock, Mail, Download, FileSpreadsheet } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, CheckCircle, BarChart3, Users, Landmark, Clock, Mail, Download, FileSpreadsheet, RefreshCw, Search } from 'lucide-react';
+import EmployeeTicketInsights from './EmployeeTicketInsights';
 
 interface SLAStatsDashboardProps {
   tickets: Ticket[];
   departments: Department[];
   categories: ComplaintCategory[];
+  companyUsers: UserSession[];
   referenceTime: Date;
   sentEmails?: SentEmail[];
+  onSelectTicket: (ticket: Ticket) => void;
 }
 
 export default function SLAStatsDashboard({ 
   tickets, 
   departments, 
   categories, 
+  companyUsers,
   referenceTime,
-  sentEmails = []
+  sentEmails = [],
+  onSelectTicket
 }: SLAStatsDashboardProps) {
+  const [dashboardSearch, setDashboardSearch] = useState('');
+  const [dashboardDeptFilter, setDashboardDeptFilter] = useState('all');
+  const [dashboardStatusFilter, setDashboardStatusFilter] = useState('all');
+  const [dashboardSlaFilter, setDashboardSlaFilter] = useState('all');
+  const [dashboardPriorityFilter, setDashboardPriorityFilter] = useState('all');
+  const [dashboardEscalationFilter, setDashboardEscalationFilter] = useState('all');
+
   const downloadCsvReport = (fileName: string, rows: Array<Record<string, string | number>>) => {
     if (rows.length === 0) {
       alert('No report data is available to export yet.');
@@ -73,12 +85,58 @@ export default function SLAStatsDashboard({
     }));
   }, [tickets, referenceTime]);
 
+  const filteredActiveTickets = useMemo(() => {
+    const query = dashboardSearch.trim().toLowerCase();
+
+    return activeTickets.filter((ticket) => {
+      const matchesSearch =
+        !query ||
+        ticket.id.toLowerCase().includes(query) ||
+        ticket.title.toLowerCase().includes(query) ||
+        ticket.description.toLowerCase().includes(query) ||
+        ticket.departmentName.toLowerCase().includes(query) ||
+        ticket.categoryName.toLowerCase().includes(query) ||
+        ticket.creatorName.toLowerCase().includes(query) ||
+        ticket.creatorEmail.toLowerCase().includes(query) ||
+        (ticket.assignedAgent || 'unassigned').toLowerCase().includes(query) ||
+        (ticket.assignedAgentEmail || '').toLowerCase().includes(query);
+
+      const matchesDept = dashboardDeptFilter === 'all' || ticket.departmentId === dashboardDeptFilter;
+      const matchesStatus = dashboardStatusFilter === 'all' || ticket.status === dashboardStatusFilter;
+      const matchesSla = dashboardSlaFilter === 'all' || ticket.computedSlaStatus === dashboardSlaFilter;
+      const matchesPriority = dashboardPriorityFilter === 'all' || ticket.priority === dashboardPriorityFilter;
+      const matchesEscalation =
+        dashboardEscalationFilter === 'all' ||
+        (dashboardEscalationFilter === 'escalated' && !!ticket.isEscalated) ||
+        (dashboardEscalationFilter === 'not-escalated' && !ticket.isEscalated);
+
+      return matchesSearch && matchesDept && matchesStatus && matchesSla && matchesPriority && matchesEscalation;
+    });
+  }, [
+    activeTickets,
+    dashboardDeptFilter,
+    dashboardEscalationFilter,
+    dashboardPriorityFilter,
+    dashboardSearch,
+    dashboardSlaFilter,
+    dashboardStatusFilter
+  ]);
+
+  const resetDashboardFilters = () => {
+    setDashboardSearch('');
+    setDashboardDeptFilter('all');
+    setDashboardStatusFilter('all');
+    setDashboardSlaFilter('all');
+    setDashboardPriorityFilter('all');
+    setDashboardEscalationFilter('all');
+  };
+
   const stats = useMemo(() => {
     let withinSla = 0;
     let nearBreach = 0;
     let breached = 0;
 
-    activeTickets.forEach(t => {
+    filteredActiveTickets.forEach(t => {
       // If ticket is resolved/closed, we check whether it was resolved within or breached
       if (t.computedSlaStatus === 'SLA Breached') {
         breached++;
@@ -89,7 +147,7 @@ export default function SLAStatsDashboard({
       }
     });
 
-    const total = activeTickets.length;
+    const total = filteredActiveTickets.length;
     const metSlaRate = total > 0 ? Math.round(((withinSla + nearBreach) / total) * 100) : 100;
 
     // Department performance
@@ -98,7 +156,7 @@ export default function SLAStatsDashboard({
       deptStatsMap[d.id] = { total: 0, breached: 0, within: 0, near: 0 };
     });
 
-    activeTickets.forEach(t => {
+    filteredActiveTickets.forEach(t => {
       if (!deptStatsMap[t.departmentId]) {
         deptStatsMap[t.departmentId] = { total: 0, breached: 0, within: 0, near: 0 };
       }
@@ -131,7 +189,7 @@ export default function SLAStatsDashboard({
 
     // Agent performance
     const agentStatsMap: Record<string, { name: string; total: number; breached: number; within: number; near: number }> = {};
-    activeTickets.forEach(t => {
+    filteredActiveTickets.forEach(t => {
       const agent = t.assignedAgent || 'Unassigned';
       if (!agentStatsMap[agent]) {
         agentStatsMap[agent] = { name: agent, total: 0, breached: 0, within: 0, near: 0 };
@@ -165,7 +223,7 @@ export default function SLAStatsDashboard({
       departmentPerformance,
       agentPerformance
     };
-  }, [activeTickets, departments]);
+  }, [filteredActiveTickets, departments]);
 
   const departmentLeaders = useMemo(() => {
     const ranked = [...stats.departmentPerformance].sort((a, b) => {
@@ -202,7 +260,7 @@ export default function SLAStatsDashboard({
   const exportTicketReport = () => {
     downloadCsvReport(
       `sla-ticket-report-${referenceTime.toISOString().slice(0, 10)}.csv`,
-      activeTickets.map((ticket) => ({
+      filteredActiveTickets.map((ticket) => ({
         TicketID: ticket.id,
         Title: ticket.title,
         Department: ticket.departmentName,
@@ -220,6 +278,103 @@ export default function SLAStatsDashboard({
 
   return (
     <div className="space-y-6">
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-xs space-y-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={dashboardSearch}
+              onChange={(e) => setDashboardSearch(e.target.value)}
+              placeholder="Search by ticket ID, title, department, creator, assigned employee..."
+              className="w-full rounded-2xl border border-gray-200 bg-white py-3 pl-11 pr-4 text-sm text-gray-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={resetDashboardFilters}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-600 shadow-sm transition hover:border-gray-300 hover:text-gray-800"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Reset
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="space-y-2">
+            <label className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">Department</label>
+            <select
+              value={dashboardDeptFilter}
+              onChange={(e) => setDashboardDeptFilter(e.target.value)}
+              className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="all">All Departments</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>{department.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">Ticket Status</label>
+            <select
+              value={dashboardStatusFilter}
+              onChange={(e) => setDashboardStatusFilter(e.target.value)}
+              className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="all">All Statuses</option>
+              <option value="Open">Open</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Resolved">Resolved</option>
+              <option value="Closed">Closed</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">SLA Status</label>
+            <select
+              value={dashboardSlaFilter}
+              onChange={(e) => setDashboardSlaFilter(e.target.value)}
+              className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="all">All SLA States</option>
+              <option value="Within SLA">Within SLA</option>
+              <option value="Near SLA Breach">Near SLA Breach</option>
+              <option value="SLA Breached">SLA Breached</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">Priority</label>
+            <select
+              value={dashboardPriorityFilter}
+              onChange={(e) => setDashboardPriorityFilter(e.target.value)}
+              className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="all">All Priorities</option>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+              <option value="Critical">Critical</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">Escalation</label>
+            <select
+              value={dashboardEscalationFilter}
+              onChange={(e) => setDashboardEscalationFilter(e.target.value)}
+              className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            >
+              <option value="all">All Tickets</option>
+              <option value="escalated">Only Escalated</option>
+              <option value="not-escalated">Not Escalated</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       {/* Visual Counters */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI: Overall Compliance */}
@@ -467,6 +622,14 @@ export default function SLAStatsDashboard({
         </div>
 
       </div>
+
+      <EmployeeTicketInsights
+        departments={departments}
+        tickets={tickets}
+        companyUsers={companyUsers}
+        referenceTime={referenceTime}
+        onSelectTicket={onSelectTicket}
+      />
 
       {/* Notification audit log */}
       <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-xs mt-6 space-y-6">

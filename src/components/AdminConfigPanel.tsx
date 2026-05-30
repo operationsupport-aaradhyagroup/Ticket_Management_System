@@ -152,19 +152,25 @@ export default function AdminConfigPanel({
   };
 
   return (
+    <>
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       
       {/* 1. DEPARTMENTS PANEL & DB SYNC (Left 1/3) */}
       <div className="space-y-6 md:col-span-1">
         
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-4">
-          <div className="flex items-center space-x-2 pb-2 border-b border-gray-50">
-            <Landmark className="w-5 h-5 text-gray-400" />
-            <h3 className="font-bold text-gray-800 text-sm">Complaint Departments</h3>
+        <div className="bg-white p-5 rounded-[26px] border border-slate-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+          <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
+            <div className="rounded-2xl bg-blue-50 p-2 text-blue-600">
+              <Landmark className="w-4.5 h-4.5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-800 text-sm">Complaint Departments</h3>
+              <p className="text-[11px] text-gray-400">Create and manage routing departments.</p>
+            </div>
           </div>
 
         {/* Create Department Form */}
-        <form onSubmit={handleCreateDept} className="space-y-2">
+        <form onSubmit={handleCreateDept} className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
           <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Create Custom Department</label>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -173,12 +179,12 @@ export default function AdminConfigPanel({
               placeholder="e.g. Legal Department"
               value={newDeptName}
               onChange={(e) => setNewDeptName(e.target.value)}
-              className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-2 bg-white"
+              className="flex-1 text-xs border border-gray-200 rounded-xl px-3 py-2.5 bg-white"
             />
             <button
               id="btn-add-dept"
               type="submit"
-              className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center transition-all"
+              className="px-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center transition-all shadow-sm"
               title="Add Department"
             >
               <Plus className="w-4 h-4" />
@@ -195,9 +201,9 @@ export default function AdminConfigPanel({
                 key={d.id}
                 id={`dept-item-${d.id}`}
                 onClick={() => setSelectedDeptId(d.id)}
-                className={`w-full flex items-start sm:items-center justify-between gap-3 p-2.5 rounded-xl text-xs font-medium cursor-pointer transition-all border ${
+                className={`w-full flex items-start sm:items-center justify-between gap-3 p-3 rounded-2xl text-xs font-medium cursor-pointer transition-all border ${
                   isSelected 
-                    ? 'bg-blue-50 border-blue-100 text-blue-700 font-semibold' 
+                    ? 'bg-[linear-gradient(135deg,#eff6ff,#f8fbff)] border-blue-200 text-blue-700 font-semibold shadow-sm' 
                     : 'bg-white border-transparent text-gray-600 hover:bg-gray-50'
                 }`}
               >
@@ -234,7 +240,7 @@ export default function AdminConfigPanel({
 
       {/* Database Management & Hand-Off card */}
       {false && (
-      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-4">
+      <div className="bg-white p-5 rounded-[26px] border border-gray-100 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-2 pb-2 border-b border-gray-50">
           <Database className="w-5 h-5 text-blue-500 font-bold" />
           <h3 className="font-bold text-gray-800 text-sm">Database Sync & Shift</h3>
@@ -329,10 +335,15 @@ export default function AdminConfigPanel({
       </div>
       )}
 
-      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-4">
-        <div className="flex items-center space-x-2 pb-2 border-b border-gray-50">
-          <KeyRound className="w-5 h-5 text-indigo-500" />
-          <h3 className="font-bold text-gray-800 text-sm">Employee Password Reset</h3>
+      <div className="bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+        <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
+          <div className="rounded-2xl bg-indigo-50 p-2 text-indigo-600">
+            <KeyRound className="w-4.5 h-4.5" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-800 text-sm">Employee Password Reset</h3>
+            <p className="text-[11px] text-gray-400">Restore default Employee ID passwords for staff.</p>
+          </div>
         </div>
 
         <p className="text-[11px] leading-relaxed text-gray-500">
@@ -367,7 +378,7 @@ export default function AdminConfigPanel({
             </div>
           ) : (
             resettableEmployees.map((user) => (
-              <div key={user.email} className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
+              <div key={user.email} className="rounded-2xl border border-gray-100 bg-[linear-gradient(135deg,#ffffff,#f8fbff)] p-3.5 shadow-sm">
                 <div className="flex flex-col gap-3">
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -384,7 +395,7 @@ export default function AdminConfigPanel({
                     type="button"
                     onClick={() => handleResetEmployeePassword(user)}
                     disabled={resettingEmail === user.email}
-                    className="w-full rounded-xl border border-indigo-100 bg-white px-3 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="w-full rounded-xl border border-indigo-100 bg-white px-3 py-2.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {resettingEmail === user.email ? 'Resetting Password...' : 'Reset to Employee ID'}
                   </button>
@@ -398,17 +409,17 @@ export default function AdminConfigPanel({
     </div>
 
       {/* 2. CATEGORIES AND SLA CONFIGURATION (Right 2/3) */}
-      <div className="md:col-span-2 bg-white p-5 rounded-2xl border border-gray-100 shadow-xs flex flex-col space-y-4">
+      <div className="md:col-span-2 bg-white p-5 rounded-[28px] border border-gray-200 shadow-[0_18px_50px_rgba(15,23,42,0.07)] flex flex-col space-y-4">
         
         {/* Selected department header */}
-        <div className="pb-3 border-b border-gray-50 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
+        <div className="pb-4 border-b border-gray-100 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
           <div className="space-y-0.5 min-w-0">
             <h3 className="font-bold text-gray-800 text-sm">
               SLA Category Rules: {departments.find(d => d.id === selectedDeptId)?.name || 'Select Department'}
             </h3>
-            <p className="text-xs text-gray-400">Define operational default limits for newly filed tickets.</p>
+            <p className="text-xs text-gray-400">Define default response windows and severity expectations for complaint categories.</p>
           </div>
-          <div className="flex items-center space-x-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full w-fit">
+          <div className="flex items-center space-x-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-full w-fit">
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>Admin Control Panel</span>
           </div>
@@ -416,9 +427,11 @@ export default function AdminConfigPanel({
 
         {/* Dynamic Category Creation Form */}
         {selectedDeptId ? (
-          <form onSubmit={handleCreateCat} className="bg-gray-50/50 p-4 rounded-xl border border-gray-100 space-y-3">
-            <h4 className="text-xs font-semibold text-gray-700 flex items-center space-x-1">
-              <FolderPlus className="w-4 h-4 text-gray-400" />
+          <form onSubmit={handleCreateCat} className="bg-[linear-gradient(135deg,#f8fbff,#f8fafc)] p-4 rounded-[24px] border border-slate-200 space-y-4 shadow-inner">
+            <h4 className="text-xs font-semibold text-gray-700 flex items-center space-x-2">
+              <span className="rounded-xl bg-white p-2 text-blue-600 shadow-sm">
+                <FolderPlus className="w-4 h-4" />
+              </span>
               <span>Create Complaint Category with Default SLA</span>
             </h4>
 
@@ -433,7 +446,7 @@ export default function AdminConfigPanel({
                   placeholder="e.g. Account lockout"
                   value={newCatName}
                   onChange={(e) => setNewCatName(e.target.value)}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2.5 bg-white"
+                  className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 bg-white"
                 />
               </div>
 
@@ -444,7 +457,7 @@ export default function AdminConfigPanel({
                   id="select-new-cat-priority"
                   value={defaultPriority}
                   onChange={(e) => setDefaultPriority(e.target.value as TicketPriority)}
-                  className="w-full text-xs border border-gray-200 rounded-lg p-2.5 bg-white font-medium"
+                  className="w-full text-xs border border-gray-200 rounded-xl p-2.5 bg-white font-medium"
                 >
                   <option value="Low">Low</option>
                   <option value="Medium">Medium</option>
@@ -463,7 +476,7 @@ export default function AdminConfigPanel({
                   required
                   value={slaValue}
                   onChange={(e) => setSlaValue(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2.5 bg-white"
+                  className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 bg-white"
                 />
               </div>
 
@@ -475,7 +488,7 @@ export default function AdminConfigPanel({
                     id="select-new-cat-sla-unit"
                     value={slaUnit}
                     onChange={(e) => setSlaUnit(e.target.value as SLAUnit)}
-                    className="flex-1 text-xs border border-gray-200 rounded-lg p-2.5 bg-white"
+                    className="flex-1 text-xs border border-gray-200 rounded-xl p-2.5 bg-white"
                   >
                     <option value="minutes">Minutes</option>
                     <option value="hours">Hours</option>
@@ -484,7 +497,7 @@ export default function AdminConfigPanel({
                   <button
                     id="btn-add-cat"
                     type="submit"
-                    className="px-4 py-2.5 bg-gray-800 hover:bg-gray-950 text-white rounded-lg text-xs font-semibold flex items-center justify-center transition-all shadow-xs"
+                    className="px-4 py-2.5 bg-gray-900 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center transition-all shadow-sm"
                   >
                     Add
                   </button>
@@ -508,12 +521,12 @@ export default function AdminConfigPanel({
               No categories configured for this department yet. Standard tickets require at least one category mapping.
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[320px] sm:max-h-[220px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[320px] sm:max-h-[220px] overflow-y-auto pr-1">
               {currentCategories.map(c => (
                 <div
                   key={c.id}
                   id={`cat-card-${c.id}`}
-                  className="flex items-start justify-between gap-3 p-3 rounded-xl border border-gray-100 hover:border-gray-200 bg-gray-50/50 hover:bg-white transition-all duration-200"
+                  className="flex items-start justify-between gap-3 p-3.5 rounded-2xl border border-slate-200 hover:border-blue-200 bg-[linear-gradient(135deg,#ffffff,#f8fbff)] hover:bg-white transition-all duration-200 shadow-sm"
                 >
                     <div className="space-y-1 min-w-0">
                     <p className="font-semibold text-gray-700 text-xs break-words">{c.name}</p>
@@ -556,7 +569,7 @@ export default function AdminConfigPanel({
         </div>
 
         {/* Informative Guidance */}
-        <div className="p-3 bg-blue-50 text-blue-700 rounded-xl flex items-start space-x-2 text-[11px] font-medium border border-blue-100">
+        <div className="p-3.5 bg-[linear-gradient(135deg,#eff6ff,#f5f9ff)] text-blue-700 rounded-2xl flex items-start space-x-2 text-[11px] font-medium border border-blue-100">
           <AlertCircle className="w-4.5 h-4.5 text-blue-500 shrink-0 mt-0.5" />
           <p>
             When users file complaints under these categories, the system will instantly load and lock operational SLAs unless an Admin manually uses custom parameters.
@@ -566,5 +579,7 @@ export default function AdminConfigPanel({
       </div>
 
     </div>
+
+    </>
   );
 }

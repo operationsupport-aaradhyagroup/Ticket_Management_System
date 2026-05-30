@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { initializeDb, dbActions, IUser, IDepartment, IComplaintCategory, ITicket, ISentEmail } from './serverDB';
+import { calculateDueDate } from './src/utils';
 
 // Load environmental properties
 dotenv.config();
@@ -983,18 +984,31 @@ app.get('/cron', async (req, res) => {
         slaType,
         slaDurationValue,
         slaDurationUnit,
-        slaDueDate,
         assignedAgentEmail,
         assignedAgent
       } = req.body;
 
-      if (!title || !description || !departmentId || !categoryId || !slaDurationValue || !slaDurationUnit || !slaDueDate) {
+      if (!title || !description || !departmentId || !categoryId) {
         res.status(400).json({ error: 'Incomplete complaint ticket parameters.' });
         return;
       }
 
-      const ticketId = await getNextTicketId();
       const createdAt = new Date().toISOString();
+      const categories = await dbActions.getCategories();
+      const selectedCategory = categories.find(category => category.id === categoryId);
+      if (!selectedCategory) {
+        res.status(400).json({ error: 'Selected complaint category was not found.' });
+        return;
+      }
+
+      const isAdminOverride = req.user?.role === 'Admin' && slaType === 'Custom';
+      const parsedOverrideValue = parseInt(slaDurationValue);
+      const finalSlaValue = isAdminOverride && parsedOverrideValue > 0 ? parsedOverrideValue : selectedCategory.defaultSlaValue;
+      const finalSlaUnit = isAdminOverride ? slaDurationUnit : selectedCategory.defaultSlaUnit;
+      const finalSlaType = isAdminOverride ? 'Custom' : 'Default';
+      const finalSlaDueDate = calculateDueDate(createdAt, finalSlaValue, finalSlaUnit);
+
+      const ticketId = await getNextTicketId();
 
       const newTicket: ITicket = {
         id: ticketId,
@@ -1010,10 +1024,10 @@ app.get('/cron', async (req, res) => {
         creatorName: req.user!.name,
         assignedAgent: assignedAgent || 'Unassigned',
         assignedAgentEmail: assignedAgentEmail || '',
-        slaType: slaType || 'Default',
-        slaDurationValue: parseInt(slaDurationValue),
-        slaDurationUnit,
-        slaDueDate,
+        slaType: finalSlaType,
+        slaDurationValue: finalSlaValue,
+        slaDurationUnit: finalSlaUnit,
+        slaDueDate: finalSlaDueDate,
         slaStatus: 'Within SLA',
         slaBreachedAt: null,
         createdAt,
@@ -1024,7 +1038,7 @@ app.get('/cron', async (req, res) => {
             id: 'hist-' + Date.now(),
             timestamp: createdAt,
             userEmail: req.user!.email,
-            action: `Ticket successfully created by user. SLA target set to ${slaDurationValue} ${slaDurationUnit} (${slaType} type)${assignedAgentEmail ? ` and assigned to ${assignedAgent}` : ''}`
+            action: `Ticket successfully created by user. SLA target set to ${finalSlaValue} ${finalSlaUnit} (${finalSlaType} type)${assignedAgentEmail ? ` and assigned to ${assignedAgent}` : ''}`
           }
         ]
       };
@@ -1065,20 +1079,75 @@ app.get('/cron', async (req, res) => {
         return;
       }
 
+      const isAdminUser = req.user?.role === 'Admin';
+
+      if (!isAdminUser) {
+        const attemptedSensitiveChange =
+          (assignedAgent !== undefined && assignedAgent !== existingTicket.assignedAgent) ||
+          (assignedAgentEmail !== undefined && assignedAgentEmail !== existingTicket.assignedAgentEmail) ||
+          (slaType !== undefined && slaType !== existingTicket.slaType) ||
+          (slaDurationValue !== undefined && parseInt(slaDurationValue) !== existingTicket.slaDurationValue) ||
+          (slaDurationUnit !== undefined && slaDurationUnit !== existingTicket.slaDurationUnit) ||
+          (slaDueDate !== undefined && slaDueDate !== existingTicket.slaDueDate) ||
+          (isEscalated !== undefined && isEscalated !== existingTicket.isEscalated);
+
+        if (attemptedSensitiveChange) {
+          res.status(403).json({ error: 'Only admins can change assignment, escalation, or SLA settings.' });
+          return;
+        }
+      }
+
+      const validateAppendedItems = <T extends { userEmail: string }>(
+        existingItems: T[] = [],
+        nextItems: T[] = []
+      ) => {
+        if (!Array.isArray(nextItems)) return false;
+        if (nextItems.length < existingItems.length) return false;
+
+        for (let index = 0; index < existingItems.length; index++) {
+          if (JSON.stringify(existingItems[index]) !== JSON.stringify(nextItems[index])) {
+            return false;
+          }
+        }
+
+        const actorEmail = req.user?.email?.toLowerCase();
+        for (let index = existingItems.length; index < nextItems.length; index++) {
+          if ((nextItems[index]?.userEmail || '').toLowerCase() !== actorEmail) {
+            return false;
+          }
+        }
+
+        return true;
+      };
+
       // Prepare incremental updates
       const updates: Partial<ITicket> = {};
       if (status !== undefined) updates.status = status;
       if (priority !== undefined) updates.priority = priority;
-      if (assignedAgent !== undefined) updates.assignedAgent = assignedAgent;
-      if (assignedAgentEmail !== undefined) updates.assignedAgentEmail = assignedAgentEmail;
-      if (slaType !== undefined) updates.slaType = slaType;
-      if (slaDurationValue !== undefined) updates.slaDurationValue = parseInt(slaDurationValue);
-      if (slaDurationUnit !== undefined) updates.slaDurationUnit = slaDurationUnit;
-      if (slaDueDate !== undefined) updates.slaDueDate = slaDueDate;
+      if (isAdminUser && assignedAgent !== undefined) updates.assignedAgent = assignedAgent;
+      if (isAdminUser && assignedAgentEmail !== undefined) updates.assignedAgentEmail = assignedAgentEmail;
+      if (isAdminUser && slaType !== undefined) updates.slaType = slaType;
+      if (isAdminUser && slaDurationValue !== undefined) updates.slaDurationValue = parseInt(slaDurationValue);
+      if (isAdminUser && slaDurationUnit !== undefined) updates.slaDurationUnit = slaDurationUnit;
+      if (isAdminUser && slaDueDate !== undefined) updates.slaDueDate = slaDueDate;
       if (resolvedAt !== undefined) updates.resolvedAt = resolvedAt;
-      if (history !== undefined) updates.history = history;
-      if (remarks !== undefined) updates.remarks = remarks;
-      if (isEscalated !== undefined) updates.isEscalated = isEscalated;
+      if (isAdminUser && isEscalated !== undefined) updates.isEscalated = isEscalated;
+
+      if (history !== undefined) {
+        if (!isAdminUser && !validateAppendedItems(existingTicket.history || [], history || [])) {
+          res.status(403).json({ error: 'Invalid history update payload for this user.' });
+          return;
+        }
+        updates.history = history;
+      }
+
+      if (remarks !== undefined) {
+        if (!isAdminUser && !validateAppendedItems(existingTicket.remarks || [], remarks || [])) {
+          res.status(403).json({ error: 'Invalid remarks update payload for this user.' });
+          return;
+        }
+        updates.remarks = remarks;
+      }
 
       const updated = await dbActions.updateTicket(id, updates);
       if (!updated) {

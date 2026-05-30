@@ -22,6 +22,7 @@ export default function CreateTicketModal({
   companyUsers,
   onSubmit
 }: CreateTicketModalProps) {
+  const canCustomizeSla = currentUser.role === 'Admin';
   const [description, setDescription] = useState('');
   const [selectedDeptId, setSelectedDeptId] = useState('');
   const [selectedCatId, setSelectedCatId] = useState('');
@@ -158,8 +159,9 @@ export default function CreateTicketModal({
     const createdAt = new Date().toISOString();
     
     // Choose SLA to calculate target
-    const finalValue = isCustomSla ? slaValue : cat.defaultSlaValue;
-    const finalUnit = isCustomSla ? slaUnit : cat.defaultSlaUnit;
+    const useCustomSla = canCustomizeSla && isCustomSla;
+    const finalValue = useCustomSla ? slaValue : cat.defaultSlaValue;
+    const finalUnit = useCustomSla ? slaUnit : cat.defaultSlaUnit;
     const computedDueDate = calculateDueDate(createdAt, finalValue, finalUnit);
 
     const newTicket: Ticket = {
@@ -176,7 +178,7 @@ export default function CreateTicketModal({
       creatorName: currentUser.name,
       assignedAgent: selectedAgentName || 'Unassigned',
       assignedAgentEmail: selectedAgentEmail,
-      slaType: isCustomSla ? 'Custom' : 'Default',
+      slaType: useCustomSla ? 'Custom' : 'Default',
       slaDurationValue: finalValue,
       slaDurationUnit: finalUnit,
       slaDueDate: computedDueDate,
@@ -189,7 +191,7 @@ export default function CreateTicketModal({
           id: 'hist-' + Date.now(),
           timestamp: createdAt,
           userEmail: currentUser.email,
-          action: `Complaint ticket initialized with ${isCustomSla ? 'Custom' : 'Default'} SLA (${finalValue} ${finalUnit})${selectedAgentEmail ? ` and assigned to ${selectedAgentName}` : ''}`
+          action: `Complaint ticket initialized with ${useCustomSla ? 'Custom' : 'Default'} SLA (${finalValue} ${finalUnit})${selectedAgentEmail ? ` and assigned to ${selectedAgentName}` : ''}`
         }
       ]
     };
@@ -286,11 +288,11 @@ export default function CreateTicketModal({
                   else if (p === 'High') colorClass = 'bg-orange-500 text-white shadow-sm';
                   else if (p === 'Medium') colorClass = 'bg-amber-500 text-white shadow-sm';
                   else colorClass = 'bg-blue-600 text-white shadow-sm';
-                  if (!isCustomSla) {
+                  if (!canCustomizeSla || !isCustomSla) {
                     colorClass += ' opacity-80';
                   }
                 } else {
-                  colorClass = !isCustomSla 
+                  colorClass = !canCustomizeSla || !isCustomSla 
                     ? 'bg-gray-50/50 text-gray-400 border border-gray-150 cursor-not-allowed opacity-60' 
                     : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200 cursor-pointer';
                 }
@@ -300,11 +302,11 @@ export default function CreateTicketModal({
                     key={p}
                     type="button"
                     onClick={() => {
-                      if (isCustomSla) {
+                      if (canCustomizeSla && isCustomSla) {
                         setPriority(p);
                       }
                     }}
-                    disabled={!isCustomSla}
+                    disabled={!canCustomizeSla || !isCustomSla}
                     className={`py-2 text-xs font-semibold rounded-lg transition-all ${colorClass}`}
                   >
                     {p}
@@ -312,9 +314,14 @@ export default function CreateTicketModal({
                 );
               })}
             </div>
-            {!isCustomSla && (
+            {!canCustomizeSla && (
               <p className="text-[10px] text-gray-400 mt-1.5 leading-relaxed">
-                Priorities are preset according to corporate SLA guidelines. Use <strong className="font-semibold text-blue-600">Customize SLA & Priority</strong> below if you have special permissions to request an override.
+                Priorities are preset according to corporate SLA guidelines. Employees cannot customize SLA or priority while filing a complaint.
+              </p>
+            )}
+            {canCustomizeSla && !isCustomSla && (
+              <p className="text-[10px] text-gray-400 mt-1.5 leading-relaxed">
+                Priorities are preset according to corporate SLA guidelines. Use <strong className="font-semibold text-blue-600">Customize SLA & Priority</strong> below if admin override is required.
               </p>
             )}
           </div>
@@ -328,16 +335,18 @@ export default function CreateTicketModal({
               </div>
               
               {/* Optional override checkbox - ONLY show/allow if current user is Admin standard or if override SLA overrides are configured */}
-              <label className="flex items-center space-x-2 cursor-pointer">
-                <input
-                  id="checkbox-custom-sla"
-                  type="checkbox"
-                  checked={isCustomSla}
-                  onChange={(e) => setIsCustomSla(e.checked || e.target.checked)}
-                  className="rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
-                />
-                <span className="text-xs font-medium text-blue-600 hover:underline">Customize SLA & Priority</span>
-              </label>
+              {canCustomizeSla && (
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    id="checkbox-custom-sla"
+                    type="checkbox"
+                    checked={isCustomSla}
+                    onChange={(e) => setIsCustomSla(e.checked || e.target.checked)}
+                    className="rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                  />
+                  <span className="text-xs font-medium text-blue-600 hover:underline">Customize SLA & Priority</span>
+                </label>
+              )}
             </div>
 
             {estimatedDueDate && (
@@ -378,7 +387,7 @@ export default function CreateTicketModal({
                   )}
                 </div>
               </div>
-            ) : (
+            ) : canCustomizeSla ? (
               /* Custom SLA Selection Control Panel */
               <div id="custom-sla-form" className="space-y-3 pt-1">
                 <p className="text-xs text-amber-600 font-medium flex items-center gap-1">
@@ -419,7 +428,7 @@ export default function CreateTicketModal({
                   Custom SLA overrides will immediately update the due date and unlock manual priority selection.
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* 6. Assign to Agent - Department wise */}

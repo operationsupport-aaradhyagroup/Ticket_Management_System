@@ -141,12 +141,14 @@ export default function TicketDetailView({
       });
     }
 
-    if (assignedAgent !== ticket.assignedAgent) {
+    const nextAssignedAgent = isAdmin ? assignedAgent : ticket.assignedAgent;
+
+    if (nextAssignedAgent !== ticket.assignedAgent) {
       historyEntries.push({
         id: 'hist-ag-' + Date.now(),
         timestamp,
         userEmail: currentUser.email,
-        action: `Assigned agent updated to '${assignedAgent}'`
+        action: `Assigned agent updated to '${nextAssignedAgent}'`
       });
     }
 
@@ -162,8 +164,10 @@ export default function TicketDetailView({
     const updatedTicket: Ticket = {
       ...ticket,
       status: ticketStatus,
-      assignedAgent,
-      assignedAgentEmail: assignedAgentRecord?.email || ticket.assignedAgentEmail || '',
+      assignedAgent: nextAssignedAgent,
+      assignedAgentEmail: isAdmin
+        ? (assignedAgentRecord?.email || ticket.assignedAgentEmail || '')
+        : (ticket.assignedAgentEmail || ''),
       priority: ticketPriority,
       resolvedAt: ticketStatus === 'Resolved' ? timestamp : ticketStatus === 'Closed' ? (ticket.resolvedAt || timestamp) : null,
       history: historyEntries
@@ -626,7 +630,8 @@ export default function TicketDetailView({
                   id="select-assigned-agent"
                   value={assignedAgent}
                   onChange={(e) => setAssignedAgent(e.target.value)}
-                  className="w-full text-xs font-semibold text-gray-700 border border-gray-200 rounded-lg p-2.5 bg-white focus:border-blue-500"
+                  disabled={!isAdmin}
+                  className="w-full text-xs font-semibold text-gray-700 border border-gray-200 rounded-lg p-2.5 bg-white focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
                 >
                   <option value="Unassigned">Unassigned</option>
                   {agentsList.map(u => (
@@ -635,7 +640,11 @@ export default function TicketDetailView({
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-400 mt-1">All employees in the separate company DB are valid agents.</p>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  {isAdmin
+                    ? 'All employees in the separate company DB are valid agents.'
+                    : 'Assigned agent can only be changed by an admin.'}
+                </p>
               </div>
 
               {/* Submit changes button */}
