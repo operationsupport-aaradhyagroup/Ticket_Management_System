@@ -283,6 +283,7 @@ const buildAssignmentEmailHtml = (email: ISentEmail) => {
     summaryRows: [
       { label: 'Ticket ID', value: context.ticketId },
       { label: 'Title', value: context.ticketTitle },
+      { label: 'Description', value: context.description },
       { label: 'Department', value: context.departmentName },
       { label: 'Category', value: context.categoryName },
       { label: 'Priority', value: context.priority, emphasis: true, tone: 'info' },
@@ -310,6 +311,7 @@ const buildEscalationEmailHtml = (email: ISentEmail) => {
     summaryRows: [
       { label: 'Ticket ID', value: context.ticketId },
       { label: 'Title', value: context.ticketTitle },
+      { label: 'Description', value: context.description },
       { label: 'Department', value: context.departmentName },
       { label: 'Category', value: context.categoryName },
       { label: 'Priority', value: context.priority, emphasis: true, tone: 'danger' },
@@ -333,6 +335,7 @@ const buildClosureEmailHtml = (email: ISentEmail) => {
     summaryRows: [
       { label: 'Ticket ID', value: context.ticketId },
       { label: 'Title', value: context.ticketTitle },
+      { label: 'Description', value: context.description },
       { label: 'Department', value: context.departmentName },
       { label: 'Category', value: context.categoryName },
       { label: 'Final Status', value: context.finalStatus, emphasis: true, tone: 'success' },
@@ -383,7 +386,7 @@ const buildNotificationEmail = ({
       toName: recipientName,
       toEmail: recipientEmail,
       subject: `[TICKET CLOSED] ${ticket.id} - ${ticket.title}`,
-      body: `Hello ${recipientName},\n\nYour complaint ticket has been marked as closed.\n\nTicket ID: ${ticket.id}\nTitle: ${ticket.title}\nDepartment: ${ticket.departmentName}\nCategory: ${ticket.categoryName}\nFinal Status: ${ticket.status}\nClosed At: ${ticket.resolvedAt ? new Date(ticket.resolvedAt).toLocaleString() : new Date(sentAt).toLocaleString()}\nAssigned To: ${ticket.assignedAgent || 'Unassigned'}${ticket.assignedAgentEmail ? ` (${ticket.assignedAgentEmail})` : ''}\n\nIf you still face the issue, please raise a new complaint or contact the support team.\nRegistered Server timestamp: ${sentAt}`,
+      body: `Hello ${recipientName},\n\nYour complaint ticket has been marked as closed.\n\nTicket ID: ${ticket.id}\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nDepartment: ${ticket.departmentName}\nCategory: ${ticket.categoryName}\nFinal Status: ${ticket.status}\nClosed At: ${ticket.resolvedAt ? new Date(ticket.resolvedAt).toLocaleString() : new Date(sentAt).toLocaleString()}\nAssigned To: ${ticket.assignedAgent || 'Unassigned'}${ticket.assignedAgentEmail ? ` (${ticket.assignedAgentEmail})` : ''}\n\nIf you still face the issue, please raise a new complaint or contact the support team.\nRegistered Server timestamp: ${sentAt}`,
       sentAt,
       notificationType
     };
