@@ -90,6 +90,10 @@ const getNextTicketId = async () => {
   return `TKT-${nextTicketNumber}`;
 };
 
+const resetTicketSequence = () => {
+  writeTicketSequence(0);
+};
+
 const deriveLegacySlaDuration = (createdAt: string, dueDate: string) => {
   const createdAtMs = new Date(createdAt).getTime();
   const dueDateMs = new Date(dueDate).getTime();
@@ -998,6 +1002,27 @@ app.get('/cron', async (req, res) => {
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message || 'Employee account creation failed.' });
+    }
+  });
+
+  app.post('/api/admin/reset-tickets', authenticateToken, async (req, res) => {
+    try {
+      if (req.user?.role !== 'Admin') {
+        res.status(403).json({ error: 'Only admins can reset all tickets.' });
+        return;
+      }
+
+      const result = await dbActions.resetTickets();
+      resetTicketSequence();
+
+      res.json({
+        message: `Deleted ${result.deletedTickets} tickets and ${result.deletedEmails} ticket emails. Ticket numbering will restart from TKT-1.`,
+        deletedTickets: result.deletedTickets,
+        deletedEmails: result.deletedEmails,
+        nextTicketId: 'TKT-1'
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Ticket reset failed.' });
     }
   });
 

@@ -828,11 +828,6 @@ async function seedDefaults() {
           );
         }
       }
-      const ticketCount = await TicketModel.countDocuments();
-      if (ticketCount === 0) {
-        await TicketModel.insertMany(INITIAL_TICKETS);
-        console.log('Seeded MongoDB default tickets.');
-      }
 
       // Live migration routine of any custom departments/categories/tickets/emails from local disk
       let uCount = 0;
@@ -930,9 +925,6 @@ async function seedDefaults() {
           diskDb.categories.push(c);
         }
       }
-    }
-    if (diskDb.tickets.length === 0) {
-      diskDb.tickets = INITIAL_TICKETS;
     }
     saveToDisk();
     console.log('Seeded JSON-Disk database defaults.');
@@ -1119,6 +1111,27 @@ export const dbActions = {
     diskDb.tickets[idx] = { ...diskDb.tickets[idx], ...updates };
     saveToDisk();
     return diskDb.tickets[idx];
+  },
+
+  resetTickets: async (): Promise<{ deletedTickets: number; deletedEmails: number }> => {
+    if (isMongoConnected) {
+      const [ticketResult, emailResult] = await Promise.all([
+        TicketModel.deleteMany({}),
+        EmailModel.deleteMany({})
+      ]);
+
+      return {
+        deletedTickets: ticketResult.deletedCount || 0,
+        deletedEmails: emailResult.deletedCount || 0
+      };
+    }
+
+    const deletedTickets = diskDb.tickets.length;
+    const deletedEmails = diskDb.emails.length;
+    diskDb.tickets = [];
+    diskDb.emails = [];
+    saveToDisk();
+    return { deletedTickets, deletedEmails };
   },
 
   // --- EMAILS SECTION ---

@@ -571,6 +571,38 @@ export default function App() {
     }
   };
 
+  const handleResetTickets = async () => {
+    if (!token) return { success: false, error: 'Admin session is expired or not authenticated.' };
+    try {
+      setDataLoading(true);
+      const res = await fetch('/api/admin/reset-tickets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const rawResponse = await res.text();
+      const data = rawResponse ? JSON.parse(rawResponse) : {};
+
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Ticket reset failed.' };
+      }
+
+      setSelectedTicketId(null);
+      await fetchDbData();
+      return {
+        success: true,
+        message: data.message || 'All tickets were deleted. The next ticket will start from TKT-1.'
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Ticket reset failed.' };
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
   const handleAddNewCategory = async (deptId: string, name: string, defaultSlaValue: number, defaultSlaUnit: SLAUnit, defaultPriority: TicketPriority) => {
     if (!token) return;
     try {
@@ -985,6 +1017,7 @@ export default function App() {
                 onDeleteCategory={handleDeleteCategory}
                 onMigrateDatabase={handleMigrateDatabase}
                 onResetEmployeePassword={handleResetEmployeePassword}
+                onResetTickets={handleResetTickets}
               />
             )}
           </div>

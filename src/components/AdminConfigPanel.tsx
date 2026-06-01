@@ -17,6 +17,7 @@ interface AdminConfigPanelProps {
   onDeleteCategory?: (id: string) => void;
   onMigrateDatabase: () => Promise<{ success: boolean; migratedCount?: any; error?: string }>;
   onResetEmployeePassword: (email: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  onResetTickets: () => Promise<{ success: boolean; message?: string; error?: string }>;
 }
 
 export default function AdminConfigPanel({
@@ -33,7 +34,8 @@ export default function AdminConfigPanel({
   onDeleteDepartment,
   onDeleteCategory,
   onMigrateDatabase,
-  onResetEmployeePassword
+  onResetEmployeePassword,
+  onResetTickets
 }: AdminConfigPanelProps) {
   const [newDeptName, setNewDeptName] = useState('');
   const [selectedDeptId, setSelectedDeptId] = useState<string>(departments[0]?.id || '');
@@ -89,6 +91,11 @@ export default function AdminConfigPanel({
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [resettingEmail, setResettingEmail] = useState<string | null>(null);
   const [passwordResetStatus, setPasswordResetStatus] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const [resettingTickets, setResettingTickets] = useState(false);
+  const [ticketResetStatus, setTicketResetStatus] = useState<{
     type: 'success' | 'error';
     message: string;
   } | null>(null);
@@ -417,6 +424,37 @@ export default function AdminConfigPanel({
     }
   };
 
+  const handleResetTickets = async () => {
+    const confirmed = confirm(
+      'Delete all tickets and reset numbering back to TKT-1? This will also clear ticket email records.'
+    );
+    if (!confirmed) return;
+
+    setResettingTickets(true);
+    setTicketResetStatus(null);
+    try {
+      const result = await onResetTickets();
+      if (result.success) {
+        setTicketResetStatus({
+          type: 'success',
+          message: result.message || 'All tickets were deleted. The next ticket will start from TKT-1.'
+        });
+      } else {
+        setTicketResetStatus({
+          type: 'error',
+          message: result.error || 'Ticket reset failed.'
+        });
+      }
+    } catch (error: any) {
+      setTicketResetStatus({
+        type: 'error',
+        message: error.message || 'Ticket reset failed.'
+      });
+    } finally {
+      setResettingTickets(false);
+    }
+  };
+
   return (
     <>
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -502,6 +540,42 @@ export default function AdminConfigPanel({
             );
           })}
         </div>
+      </div>
+
+      <div className="bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+        <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
+          <div className="rounded-2xl bg-rose-50 p-2 text-rose-600">
+            <Trash2 className="w-4.5 h-4.5" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-800 text-sm">Ticket Reset</h3>
+            <p className="text-[11px] text-gray-400">Clear all complaint tickets and restart numbering from TKT-1.</p>
+          </div>
+        </div>
+
+        {ticketResetStatus && (
+          <div className={`rounded-2xl border px-3.5 py-3 text-xs ${
+            ticketResetStatus.type === 'success'
+              ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
+              : 'border-rose-100 bg-rose-50 text-rose-800'
+          }`}>
+            {ticketResetStatus.message}
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-[11px] leading-relaxed text-rose-800">
+          This will delete all current tickets and ticket email logs. The next created ticket will restart from <strong>TKT-1</strong>.
+        </div>
+
+        <button
+          type="button"
+          onClick={handleResetTickets}
+          disabled={resettingTickets}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-rose-300"
+        >
+          <Trash2 className="h-4 w-4" />
+          {resettingTickets ? 'Resetting Tickets...' : 'Delete All Tickets & Restart IDs'}
+        </button>
       </div>
 
       {/* Database Management & Hand-Off card */}
