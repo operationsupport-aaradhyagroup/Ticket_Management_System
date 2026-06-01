@@ -626,66 +626,7 @@ async function seedDefaults() {
   const { importedDepartments, importedUsers } = buildImportedSeeds('2026-05-20T08:00:00Z');
 
   // Helper relative dates
-  const baseClock = new Date('2026-05-26T04:35:05Z');
-  const getRelativeDate = (offsetMinutes: number): string => {
-    const base = new Date(baseClock);
-    base.setMinutes(base.getMinutes() + offsetMinutes);
-    return base.toISOString();
-  };
-
-  const INITIAL_TICKETS: ITicket[] = [
-    {
-      id: 'TKT-2491',
-      title: 'E-commerce API data sync syncing slow',
-      description: 'Data sync has been delayed since morning. Sales statistics are not populated in the internal dashboard.',
-      departmentId: 'dept-it',
-      departmentName: 'IT Department',
-      categoryId: 'cat-it-1',
-      categoryName: 'Data not coming properly',
-      status: 'In Progress',
-      priority: 'High',
-      creatorEmail: 'rahulpatel789856@gmail.com',
-      creatorName: 'Rahul Patel',
-      assignedAgent: 'Jane Doe (IT Lead)',
-      slaType: 'Default',
-      slaDurationValue: 2,
-      slaDurationUnit: 'hours',
-      slaDueDate: getRelativeDate(60), // Due in 1 hour
-      slaStatus: 'Within SLA',
-      slaBreachedAt: null,
-      createdAt: getRelativeDate(-60),
-      resolvedAt: null,
-      history: [
-        { id: 'h1', timestamp: getRelativeDate(-60), userEmail: 'rahulpatel789856@gmail.com', action: 'Ticket created with default SLA (2 hours)' },
-        { id: 'h2', timestamp: getRelativeDate(-45), userEmail: 'rahulpatel789856@gmail.com', action: 'Assigned to Jane Doe (IT Lead) & marked In Progress' }
-      ]
-    },
-    {
-      id: 'TKT-1082',
-      title: 'Offboarding procedure guidelines missing in portal',
-      description: 'Need the latest copy of offboarding protocols for employees leaving the Accounts department.',
-      departmentId: 'dept-hr',
-      departmentName: 'HR Department',
-      categoryId: 'cat-hr-2',
-      categoryName: 'Onboarding Assistance',
-      status: 'Open',
-      priority: 'Medium',
-      creatorEmail: 'jane.smith@company.com',
-      creatorName: 'Jane Smith',
-      assignedAgent: 'Unassigned',
-      slaType: 'Default',
-      slaDurationValue: 2,
-      slaDurationUnit: 'days',
-      slaDueDate: getRelativeDate(-2880), // Due 2 days ago (Breached)
-      slaStatus: 'SLA Breached',
-      slaBreachedAt: getRelativeDate(-2880),
-      createdAt: getRelativeDate(-5760),
-      resolvedAt: null,
-      history: [
-        { id: 'h3', timestamp: getRelativeDate(-5760), userEmail: 'jane.smith@company.com', action: 'Ticket created with default SLA (2 days)' }
-      ]
-    }
-  ];
+  const LEGACY_DEMO_TICKET_IDS = ['TKT-2491', 'TKT-1082'];
 
   // Hash password
   const salt = await bcrypt.genSalt(10);
@@ -881,6 +822,9 @@ async function seedDefaults() {
         console.log(`Auto-Migrated local data to MongoDB: ${uCount} users, ${dCount} depts, ${cCount} cats, ${tCount} tkts, ${eCount} emails.`);
       }
 
+      await TicketModel.deleteMany({ id: { $in: LEGACY_DEMO_TICKET_IDS } });
+      await EmailModel.deleteMany({ ticketId: { $in: LEGACY_DEMO_TICKET_IDS } });
+
     } catch (e) {
       console.error('Mongo Seeding and migration error:', e);
     }
@@ -926,6 +870,8 @@ async function seedDefaults() {
         }
       }
     }
+    diskDb.tickets = diskDb.tickets.filter(ticket => !LEGACY_DEMO_TICKET_IDS.includes(ticket.id));
+    diskDb.emails = diskDb.emails.filter(email => !LEGACY_DEMO_TICKET_IDS.includes(email.ticketId));
     saveToDisk();
     console.log('Seeded JSON-Disk database defaults.');
   }
