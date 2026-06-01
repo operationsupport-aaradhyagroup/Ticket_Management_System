@@ -5,8 +5,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
-import { initializeDb, dbActions, IUser, IDepartment, IComplaintCategory, ITicket, ISentEmail } from './serverDB';
-import { calculateDueDate } from './src/utils';
+import { initializeDb, dbActions, IUser, IDepartment, IComplaintCategory, ITicket, ISentEmail, IEscalationRule } from './serverDB';
 
 // Load environmental properties
 dotenv.config();
@@ -89,6 +88,52 @@ const getNextTicketId = async () => {
   const nextTicketNumber = readTicketSequence() + 1;
   writeTicketSequence(nextTicketNumber);
   return `TKT-${nextTicketNumber}`;
+};
+
+const deriveLegacySlaDuration = (createdAt: string, dueDate: string) => {
+  const createdAtMs = new Date(createdAt).getTime();
+  const dueDateMs = new Date(dueDate).getTime();
+  const diffMinutes = Math.max(1, Math.ceil((dueDateMs - createdAtMs) / (1000 * 60)));
+
+  if (diffMinutes >= 1440) {
+    return { value: Math.ceil(diffMinutes / 1440), unit: 'days' as const };
+  }
+
+  if (diffMinutes >= 60) {
+    return { value: Math.ceil(diffMinutes / 60), unit: 'hours' as const };
+  }
+
+  return { value: diffMinutes, unit: 'minutes' as const };
+};
+
+const normalizeRoleLabel = (value: string) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const isDepartmentHeadLevel = (designation: string) => {
+  const normalized = normalizeRoleLabel(designation);
+  return normalized === 'dept head' || normalized === 'department head' || normalized === 'head';
+};
+
+const isSameUserTarget = (
+  currentName?: string,
+  currentEmail?: string,
+  nextName?: string,
+  nextEmail?: string
+) => {
+  const currentEmailKey = String(currentEmail || '').trim().toLowerCase();
+  const nextEmailKey = String(nextEmail || '').trim().toLowerCase();
+  if (currentEmailKey && nextEmailKey) {
+    return currentEmailKey === nextEmailKey;
+  }
+
+  const currentNameKey = String(currentName || '').trim().toLowerCase();
+  const nextNameKey = String(nextName || '').trim().toLowerCase();
+  return !!currentNameKey && !!nextNameKey && currentNameKey === nextNameKey;
 };
 
 const extractEmailContext = (email: ISentEmail) => {
@@ -586,6 +631,13 @@ declare global {
 async function startServer() {
   const app = express();
   app.use(express.json());
+  app.use((error: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (error instanceof SyntaxError && 'body' in error) {
+      res.status(400).json({ error: 'Invalid JSON payload sent to the server.' });
+      return;
+    }
+    next(error);
+  });
 
   // 1. Core Database Initialization
   await initializeDb();
@@ -833,6 +885,122 @@ app.get('/cron', async (req, res) => {
     }
   });
 
+  app.delete('/api/admin/users/:email', authenticateToken, async (req, res) => {
+    try {
+      if (req.user?.role !== 'Admin') {
+        res.status(403).json({ error: 'Only admins can delete employee accounts.' });
+        return;
+      }
+
+      const email = decodeURIComponent(req.params.email || '').toLowerCase().trim();
+      if (!email) {
+        res.status(400).json({ error: 'Employee email is required.' });
+        return;
+      }
+
+      if (req.user.email.toLowerCase().trim() === email) {
+        res.status(400).json({ error: 'You cannot delete your own active admin account.' });
+        return;
+      }
+
+      const user = await dbActions.findUserByEmail(email);
+      if (!user) {
+        res.status(404).json({ error: 'Employee account not found.' });
+        return;
+      }
+
+      if (user.role === 'Admin') {
+        res.status(400).json({ error: 'Admin accounts cannot be deleted from this employee panel.' });
+        return;
+      }
+
+      const deleted = await dbActions.deleteUser(email);
+      if (!deleted) {
+        res.status(500).json({ error: 'Employee account could not be deleted.' });
+        return;
+      }
+
+      res.json({ message: `${user.name} was deleted successfully.` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Employee delete failed.' });
+    }
+  });
+
+  app.post('/api/admin/users', authenticateToken, async (req, res) => {
+    try {
+      if (req.user?.role !== 'Admin') {
+        res.status(403).json({ error: 'Only admins can create employee accounts.' });
+        return;
+      }
+
+      const {
+        firstName,
+        lastName,
+        email,
+        employeeId,
+        departmentId,
+        designation,
+        reportingManager,
+        reportingManagerEmail,
+        company,
+        role,
+        password
+      } = req.body;
+
+      if (!firstName || !lastName || !email || !employeeId || !departmentId || !designation) {
+        res.status(400).json({ error: 'First name, last name, email, employee ID, department, and designation are required.' });
+        return;
+      }
+
+      const existingUser = await dbActions.findUserByEmail(email);
+      if (existingUser) {
+        res.status(400).json({ error: 'An account with this email already exists.' });
+        return;
+      }
+
+      const departments = await dbActions.getDepartments();
+      const selectedDepartment = departments.find((department) => department.id === departmentId);
+      if (!selectedDepartment) {
+        res.status(400).json({ error: 'Selected department was not found.' });
+        return;
+      }
+
+      const fullName = `${String(firstName).trim()} ${String(lastName).trim()}`.trim();
+      const defaultPassword = String(password || employeeId).trim();
+      if (!defaultPassword) {
+        res.status(400).json({ error: 'A default password could not be generated for this user.' });
+        return;
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(defaultPassword, salt);
+
+      const newUser: IUser = {
+        email: String(email).toLowerCase().trim(),
+        name: fullName,
+        passwordHash,
+        role: role === 'Admin' ? 'Admin' : 'User',
+        departmentId: selectedDepartment.id,
+        employeeId: String(employeeId).trim(),
+        firstName: String(firstName).trim(),
+        lastName: String(lastName).trim(),
+        company: String(company || 'Aaradhya Group').trim(),
+        departmentName: selectedDepartment.name,
+        designation: String(designation).trim(),
+        reportingManager: String(reportingManager || '').trim(),
+        reportingManagerEmail: String(reportingManagerEmail || '').trim()
+      };
+
+      const created = await dbActions.createUser(newUser);
+      res.status(201).json({
+        message: 'Employee account created successfully.',
+        user: sanitizeUser(created)
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Employee account creation failed.' });
+    }
+  });
+
   // Users: GET (all company users)
   app.get('/api/users', authenticateToken, async (req, res) => {
     try {
@@ -840,6 +1008,67 @@ app.get('/cron', async (req, res) => {
       res.json({ users: users.map(sanitizeUser) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/escalation-rules', authenticateToken, async (_req, res) => {
+    try {
+      const rules = await dbActions.getEscalationRules();
+      res.json({ rules });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Failed to load escalation rules.' });
+    }
+  });
+
+  app.post('/api/escalation-rules', authenticateToken, async (req, res) => {
+    try {
+      if (req.user?.role !== 'Admin') {
+        res.status(403).json({ error: 'Only admins can manage escalation ladders.' });
+        return;
+      }
+
+      const { departmentId, designationLevels } = req.body as {
+        departmentId?: string;
+        designationLevels?: string[];
+      };
+
+      if (!departmentId || !Array.isArray(designationLevels) || designationLevels.length === 0) {
+        res.status(400).json({ error: 'Department and at least one designation tier are required.' });
+        return;
+      }
+
+      const departments = await dbActions.getDepartments();
+      const department = departments.find((item) => item.id === departmentId);
+      if (!department) {
+        res.status(404).json({ error: 'Department not found.' });
+        return;
+      }
+
+      const cleanedLevels = designationLevels
+        .map((level) => String(level || '').trim())
+        .filter(Boolean);
+
+      if (cleanedLevels.length === 0) {
+        res.status(400).json({ error: 'Please provide valid designation tiers.' });
+        return;
+      }
+
+      const existingRules = await dbActions.getEscalationRules();
+      const existingRule = existingRules.find((rule) => rule.departmentId === departmentId);
+      const now = new Date().toISOString();
+      const rule: IEscalationRule = {
+        id: existingRule?.id || `esc-rule-${departmentId}`,
+        departmentId,
+        departmentName: department.name,
+        designationLevels: cleanedLevels,
+        createdAt: existingRule?.createdAt || now,
+        updatedAt: now
+      };
+
+      const savedRule = await dbActions.upsertEscalationRule(rule);
+      res.json({ rule: savedRule });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Failed to save escalation rule.' });
     }
   });
 
@@ -976,37 +1205,40 @@ app.get('/cron', async (req, res) => {
       const {
         title,
         description,
+        dueDate,
         departmentId,
         departmentName,
         categoryId,
         categoryName,
         priority,
-        slaType,
-        slaDurationValue,
-        slaDurationUnit,
         assignedAgentEmail,
         assignedAgent
       } = req.body;
 
-      if (!title || !description || !departmentId || !categoryId) {
-        res.status(400).json({ error: 'Incomplete complaint ticket parameters.' });
+      if (!title || !description || !dueDate) {
+        res.status(400).json({ error: 'Title, description, and due date are required.' });
         return;
       }
 
       const createdAt = new Date().toISOString();
-      const categories = await dbActions.getCategories();
-      const selectedCategory = categories.find(category => category.id === categoryId);
-      if (!selectedCategory) {
-        res.status(400).json({ error: 'Selected complaint category was not found.' });
+      const parsedDueDate = new Date(dueDate);
+      if (Number.isNaN(parsedDueDate.getTime())) {
+        res.status(400).json({ error: 'Invalid due date supplied.' });
         return;
       }
 
-      const isAdminOverride = req.user?.role === 'Admin' && slaType === 'Custom';
-      const parsedOverrideValue = parseInt(slaDurationValue);
-      const finalSlaValue = isAdminOverride && parsedOverrideValue > 0 ? parsedOverrideValue : selectedCategory.defaultSlaValue;
-      const finalSlaUnit = isAdminOverride ? slaDurationUnit : selectedCategory.defaultSlaUnit;
-      const finalSlaType = isAdminOverride ? 'Custom' : 'Default';
-      const finalSlaDueDate = calculateDueDate(createdAt, finalSlaValue, finalSlaUnit);
+      const departments = await dbActions.getDepartments();
+      const resolvedDepartmentId = departmentId || req.user?.departmentId;
+      const selectedDepartment = departments.find((department) => department.id === resolvedDepartmentId);
+      if (!selectedDepartment) {
+        res.status(400).json({ error: 'Selected department was not found for this user.' });
+        return;
+      }
+
+      const fallbackCategoryId = categoryId || `manual-entry-${selectedDepartment.id}`;
+      const fallbackCategoryName = categoryName || 'Manual Entry';
+      const manualDueDate = parsedDueDate.toISOString();
+      const legacySlaDuration = deriveLegacySlaDuration(createdAt, manualDueDate);
 
       const ticketId = await getNextTicketId();
 
@@ -1014,20 +1246,20 @@ app.get('/cron', async (req, res) => {
         id: ticketId,
         title: title.trim(),
         description: description.trim(),
-        departmentId,
-        departmentName,
-        categoryId,
-        categoryName,
+        departmentId: selectedDepartment.id,
+        departmentName: selectedDepartment.name || departmentName,
+        categoryId: fallbackCategoryId,
+        categoryName: fallbackCategoryName,
         status: 'Open',
         priority: priority || 'Medium',
         creatorEmail: req.user!.email,
         creatorName: req.user!.name,
         assignedAgent: assignedAgent || 'Unassigned',
         assignedAgentEmail: assignedAgentEmail || '',
-        slaType: finalSlaType,
-        slaDurationValue: finalSlaValue,
-        slaDurationUnit: finalSlaUnit,
-        slaDueDate: finalSlaDueDate,
+        slaType: 'Custom',
+        slaDurationValue: legacySlaDuration.value,
+        slaDurationUnit: legacySlaDuration.unit,
+        slaDueDate: manualDueDate,
         slaStatus: 'Within SLA',
         slaBreachedAt: null,
         createdAt,
@@ -1038,7 +1270,7 @@ app.get('/cron', async (req, res) => {
             id: 'hist-' + Date.now(),
             timestamp: createdAt,
             userEmail: req.user!.email,
-            action: `Ticket successfully created by user. SLA target set to ${finalSlaValue} ${finalSlaUnit} (${finalSlaType} type)${assignedAgentEmail ? ` and assigned to ${assignedAgent}` : ''}`
+            action: `Ticket created with manual due date ${new Date(manualDueDate).toLocaleString()}${assignedAgentEmail ? ` and assigned to ${assignedAgent}` : ''}`
           }
         ]
       };
@@ -1080,19 +1312,45 @@ app.get('/cron', async (req, res) => {
       }
 
       const isAdminUser = req.user?.role === 'Admin';
+      const actorEmail = req.user?.email?.toLowerCase() || '';
+      const actorName = req.user?.name?.trim().toLowerCase() || '';
+      const assignedAgentNameNormalized = (existingTicket.assignedAgent || '').trim().toLowerCase();
+      const assignedAgentEmailNormalized = (existingTicket.assignedAgentEmail || '').trim().toLowerCase();
+      const isAssignedUser =
+        (!!assignedAgentEmailNormalized && assignedAgentEmailNormalized === actorEmail) ||
+        (!!assignedAgentNameNormalized && assignedAgentNameNormalized === actorName) ||
+        (!!assignedAgentNameNormalized && assignedAgentNameNormalized.includes(actorName));
 
       if (!isAdminUser) {
-        const attemptedSensitiveChange =
-          (assignedAgent !== undefined && assignedAgent !== existingTicket.assignedAgent) ||
-          (assignedAgentEmail !== undefined && assignedAgentEmail !== existingTicket.assignedAgentEmail) ||
-          (slaType !== undefined && slaType !== existingTicket.slaType) ||
-          (slaDurationValue !== undefined && parseInt(slaDurationValue) !== existingTicket.slaDurationValue) ||
-          (slaDurationUnit !== undefined && slaDurationUnit !== existingTicket.slaDurationUnit) ||
-          (slaDueDate !== undefined && slaDueDate !== existingTicket.slaDueDate) ||
-          (isEscalated !== undefined && isEscalated !== existingTicket.isEscalated);
+        const dueDateChanged = slaDueDate !== undefined && slaDueDate !== existingTicket.slaDueDate;
+        const forbiddenChanges: string[] = [];
 
-        if (attemptedSensitiveChange) {
-          res.status(403).json({ error: 'Only admins can change assignment, escalation, or SLA settings.' });
+        if (assignedAgent !== undefined && assignedAgent !== existingTicket.assignedAgent) {
+          forbiddenChanges.push('assignment');
+        }
+        if (assignedAgentEmail !== undefined && assignedAgentEmail !== existingTicket.assignedAgentEmail) {
+          forbiddenChanges.push('assigned agent email');
+        }
+        if (slaType !== undefined && slaType !== existingTicket.slaType) {
+          forbiddenChanges.push('SLA type');
+        }
+        if (slaDurationValue !== undefined && parseInt(slaDurationValue) !== existingTicket.slaDurationValue) {
+          forbiddenChanges.push('SLA duration');
+        }
+        if (slaDurationUnit !== undefined && slaDurationUnit !== existingTicket.slaDurationUnit) {
+          forbiddenChanges.push('SLA unit');
+        }
+        if (dueDateChanged && !isAssignedUser) {
+          forbiddenChanges.push('due date');
+        }
+        if (isEscalated !== undefined && isEscalated !== existingTicket.isEscalated) {
+          forbiddenChanges.push('escalation');
+        }
+
+        if (forbiddenChanges.length > 0) {
+          res.status(403).json({
+            error: `You are not allowed to change: ${forbiddenChanges.join(', ')}. Only the assigned user can update due date, and only admins can change assignment, escalation, or SLA configuration.`
+          });
           return;
         }
       }
@@ -1110,7 +1368,6 @@ app.get('/cron', async (req, res) => {
           }
         }
 
-        const actorEmail = req.user?.email?.toLowerCase();
         for (let index = existingItems.length; index < nextItems.length; index++) {
           if ((nextItems[index]?.userEmail || '').toLowerCase() !== actorEmail) {
             return false;
@@ -1129,7 +1386,7 @@ app.get('/cron', async (req, res) => {
       if (isAdminUser && slaType !== undefined) updates.slaType = slaType;
       if (isAdminUser && slaDurationValue !== undefined) updates.slaDurationValue = parseInt(slaDurationValue);
       if (isAdminUser && slaDurationUnit !== undefined) updates.slaDurationUnit = slaDurationUnit;
-      if (isAdminUser && slaDueDate !== undefined) updates.slaDueDate = slaDueDate;
+      if ((isAdminUser || isAssignedUser) && slaDueDate !== undefined) updates.slaDueDate = slaDueDate;
       if (resolvedAt !== undefined) updates.resolvedAt = resolvedAt;
       if (isAdminUser && isEscalated !== undefined) updates.isEscalated = isEscalated;
 
@@ -1215,37 +1472,84 @@ app.get('/cron', async (req, res) => {
         : users.find(user => user.name === ticket.assignedAgent);
 
       const creatorUser = users.find(user => user.email.toLowerCase() === ticket.creatorEmail.toLowerCase());
-      const assignedUsersManager = assignedUser?.reportingManagerEmail
-        ? users.find(user => user.email.toLowerCase() === assignedUser.reportingManagerEmail?.toLowerCase())
-        : null;
-      const creatorUsersManager = creatorUser?.reportingManagerEmail
-        ? users.find(user => user.email.toLowerCase() === creatorUser.reportingManagerEmail?.toLowerCase())
-        : null;
+      const currentEscalationUser = assignedUser || creatorUser || null;
 
-      // Final fallback remains the mapped department head.
       const departments = await dbActions.getDepartments();
       const dept = departments.find(d => d.id === ticket.departmentId);
       const headName = dept && dept.headName ? dept.headName : 'Unassigned Head';
       const headEmail = dept && dept.headEmail ? dept.headEmail : 'unassigned@company.com';
+      const escalationRules = await dbActions.getEscalationRules();
+      const departmentRule = escalationRules.find((rule) => rule.departmentId === ticket.departmentId);
+
+      const normalizedCurrentDesignation = normalizeRoleLabel(currentEscalationUser?.designation || '');
+      const ladder = departmentRule?.designationLevels || [];
+      const normalizedLadder = ladder.map(normalizeRoleLabel);
+      const currentIndex = normalizedCurrentDesignation ? normalizedLadder.findIndex((level) => level === normalizedCurrentDesignation) : -1;
+      const nextLevel =
+        currentIndex >= 0 && currentIndex < ladder.length - 1
+          ? ladder[currentIndex + 1]
+          : null;
+
+      let ladderRecipient: { name: string; email: string; label: string } | null = null;
+      if (nextLevel && !isDepartmentHeadLevel(nextLevel)) {
+        const normalizedNextLevel = normalizeRoleLabel(nextLevel);
+        const activeTickets = tkts.filter((item) => item.status !== 'Resolved' && item.status !== 'Closed');
+        const sameDepartmentCandidates = users
+          .filter((user) => user.departmentId === ticket.departmentId)
+          .filter((user) => normalizeRoleLabel(user.designation || '') === normalizedNextLevel)
+          .filter((user) => user.email.toLowerCase() !== (currentEscalationUser?.email || '').toLowerCase())
+          .map((user) => ({
+            user,
+            activeLoad: activeTickets.filter((item) => {
+              const assignedEmail = (item.assignedAgentEmail || '').toLowerCase();
+              const assignedName = (item.assignedAgent || '').trim().toLowerCase();
+              return assignedEmail === user.email.toLowerCase() || assignedName === user.name.trim().toLowerCase();
+            }).length
+          }))
+          .sort((a, b) => {
+            if (a.activeLoad !== b.activeLoad) return a.activeLoad - b.activeLoad;
+            return a.user.name.localeCompare(b.user.name);
+          });
+
+        if (sameDepartmentCandidates.length > 0) {
+          ladderRecipient = {
+            name: sameDepartmentCandidates[0].user.name,
+            email: sameDepartmentCandidates[0].user.email,
+            label: `Designation Ladder: ${nextLevel} (Least Loaded)`
+          };
+        }
+      }
 
       const escalationRecipient =
-        assignedUsersManager
-          ? {
-              name: assignedUsersManager.name,
-              email: assignedUsersManager.email,
-              label: 'Reporting Manager'
-            }
-          : creatorUsersManager
-            ? {
-                name: creatorUsersManager.name,
-                email: creatorUsersManager.email,
-                label: 'Creator Reporting Manager'
-              }
-            : {
-                name: headName,
-                email: headEmail,
-                label: 'Department Head'
-              };
+        ladderRecipient
+          ? ladderRecipient
+          : {
+              name: headName,
+              email: headEmail,
+              label: departmentRule
+                ? 'Department Head Fallback'
+                : 'Department Head'
+            };
+
+      if (
+        isSameUserTarget(
+          ticket.assignedAgent,
+          ticket.assignedAgentEmail,
+          escalationRecipient.name,
+          escalationRecipient.email
+        ) ||
+        isSameUserTarget(
+          currentEscalationUser?.name,
+          currentEscalationUser?.email,
+          escalationRecipient.name,
+          escalationRecipient.email
+        )
+      ) {
+        res.status(400).json({
+          error: 'No higher escalation target is available. Ticket cannot be escalated back to the same user.'
+        });
+        return;
+      }
 
       const sentEmail = await createNotificationEmail({
         notificationType: 'Escalation',

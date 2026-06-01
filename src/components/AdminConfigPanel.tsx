@@ -1,14 +1,18 @@
-import React, { useState, useMemo } from 'react';
-import { Department, ComplaintCategory, SLAUnit, TicketPriority, UserSession } from '../types';
-import { Landmark, Plus, Trash2, ShieldCheck, FolderPlus, Clock, AlertCircle, Database, RefreshCw, KeyRound, Search } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ComplaintCategory, CreateUserPayload, Department, EscalationRule, SLAUnit, TicketPriority, UserSession } from '../types';
+import { Landmark, Plus, Trash2, ShieldCheck, FolderPlus, Clock, AlertCircle, Database, RefreshCw, KeyRound, Search, UserPlus, Building2, Briefcase, Mail, IdCard, GitBranch } from 'lucide-react';
 
 interface AdminConfigPanelProps {
   departments: Department[];
   categories: ComplaintCategory[];
   companyUsers: UserSession[];
+  escalationRules: EscalationRule[];
   dbType: string;
   onAddDepartment: (name: string) => void;
   onAddCategory: (deptId: string, name: string, defaultValue: number, defaultUnit: SLAUnit, defaultPriority: TicketPriority) => void;
+  onCreateUser: (payload: CreateUserPayload) => Promise<{ success: boolean; user?: UserSession; error?: string }>;
+  onDeleteUser: (email: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  onSaveEscalationRule: (departmentId: string, designationLevels: string[]) => Promise<{ success: boolean; rule?: EscalationRule; error?: string }>;
   onDeleteDepartment?: (id: string) => void;
   onDeleteCategory?: (id: string) => void;
   onMigrateDatabase: () => Promise<{ success: boolean; migratedCount?: any; error?: string }>;
@@ -19,9 +23,13 @@ export default function AdminConfigPanel({
   departments,
   categories,
   companyUsers,
+  escalationRules,
   dbType,
   onAddDepartment,
   onAddCategory,
+  onCreateUser,
+  onDeleteUser,
+  onSaveEscalationRule,
   onDeleteDepartment,
   onDeleteCategory,
   onMigrateDatabase,
@@ -35,6 +43,35 @@ export default function AdminConfigPanel({
   const [slaValue, setSlaValue] = useState<number>(4);
   const [slaUnit, setSlaUnit] = useState<SLAUnit>('hours');
   const [defaultPriority, setDefaultPriority] = useState<TicketPriority>('Medium');
+  const [escalationLadderInput, setEscalationLadderInput] = useState('');
+  const [savingEscalationRule, setSavingEscalationRule] = useState(false);
+  const [escalationRuleStatus, setEscalationRuleStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [createUserStatus, setCreateUserStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [employeeListSearch, setEmployeeListSearch] = useState('');
+  const [deletingEmployeeEmail, setDeletingEmployeeEmail] = useState<string | null>(null);
+  const [userForm, setUserForm] = useState<CreateUserPayload>({
+    firstName: '',
+    lastName: '',
+    email: '',
+    employeeId: '',
+    departmentId: departments[0]?.id || '',
+    designation: '',
+    reportingManager: '',
+    reportingManagerEmail: '',
+    company: 'Aaradhya Group',
+    role: 'User',
+    password: ''
+  });
+
+  useEffect(() => {
+    if (!userForm.departmentId && departments[0]?.id) {
+      setUserForm((prev) => ({
+        ...prev,
+        departmentId: departments[0].id
+      }));
+    }
+  }, [departments, userForm.departmentId]);
 
   // Migration control states
   const [migrating, setMigrating] = useState(false);
@@ -87,6 +124,66 @@ export default function AdminConfigPanel({
     return categories.filter(c => c.departmentId === selectedDeptId);
   }, [categories, selectedDeptId]);
 
+  const inferDesignationRank = (designation: string) => {
+    const normalized = designation
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) return 999;
+    if (/\b(intern|trainee|apprentice)\b/.test(normalized)) return 10;
+    if (/\b(junior|assistant|support|runner|field assistant)\b/.test(normalized)) return 20;
+    if (/\b(executive|officer|associate|adviser|advisor|developer|designer|specialist|engineer|accountant|coordinator|controller)\b/.test(normalized)) return 30;
+    if (/\b(lead|senior)\b/.test(normalized)) return 40;
+    if (/\b(manager|asm)\b/.test(normalized)) return 50;
+    if (/\bhead\b/.test(normalized)) return 60;
+    if (/\b(general manager|business head|ceo)\b/.test(normalized)) return 70;
+    return 35;
+  };
+
+  const displayedEscalationRules = useMemo(() => {
+    if (escalationRules.length > 0) {
+      return escalationRules;
+    }
+
+    return departments.map((department) => {
+      const uniqueDesignations = Array.from(
+        new Set(
+          companyUsers
+            .filter((user) => user.departmentId === department.id)
+            .map((user) => String(user.designation || '').trim())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => {
+        const rankDiff = inferDesignationRank(a) - inferDesignationRank(b);
+        if (rankDiff !== 0) return rankDiff;
+        return a.localeCompare(b);
+      });
+
+      const hasHeadLikeDesignation = uniqueDesignations.some((designation) => /\bhead\b/i.test(designation));
+      return {
+        id: `fallback-${department.id}`,
+        departmentId: department.id,
+        departmentName: department.name,
+        designationLevels: hasHeadLikeDesignation ? uniqueDesignations : [...uniqueDesignations, 'Dept Head'].filter(Boolean),
+        createdAt: '',
+        updatedAt: ''
+      } satisfies EscalationRule;
+    });
+  }, [companyUsers, departments, escalationRules]);
+
+  const selectedEscalationRule = useMemo(
+    () => displayedEscalationRules.find((rule) => rule.departmentId === selectedDeptId) || null,
+    [displayedEscalationRules, selectedDeptId]
+  );
+
+  useEffect(() => {
+    setEscalationLadderInput(selectedEscalationRule?.designationLevels.join(', ') || '');
+    setEscalationRuleStatus(null);
+  }, [selectedEscalationRule, selectedDeptId]);
+
   const resettableEmployees = useMemo(() => {
     const query = employeeSearch.trim().toLowerCase();
     return companyUsers
@@ -104,6 +201,38 @@ export default function AdminConfigPanel({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [companyUsers, employeeSearch]);
 
+  const managedEmployees = useMemo(() => {
+    const query = employeeListSearch.trim().toLowerCase();
+    return companyUsers
+      .filter((user) => user.role !== 'Admin')
+      .filter((user) => {
+        if (!query) return true;
+        return (
+          user.name.toLowerCase().includes(query) ||
+          user.email.toLowerCase().includes(query) ||
+          (user.employeeId || '').toLowerCase().includes(query) ||
+          (user.departmentName || '').toLowerCase().includes(query) ||
+          (user.designation || '').toLowerCase().includes(query)
+        );
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [companyUsers, employeeListSearch]);
+
+  const companyOptions = useMemo(() => {
+    const options = new Set<string>(['Aaradhya Group']);
+    companyUsers.forEach((user) => {
+      const companyName = String(user.company || '').trim();
+      if (companyName) {
+        options.add(companyName);
+      }
+    });
+    const draftCompany = String(userForm.company || '').trim();
+    if (draftCompany) {
+      options.add(draftCompany);
+    }
+    return Array.from(options).sort((a, b) => a.localeCompare(b));
+  }, [companyUsers, userForm.company]);
+
   const handleCreateDept = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDeptName.trim()) return;
@@ -116,6 +245,143 @@ export default function AdminConfigPanel({
     if (!newCatName.trim() || !selectedDeptId) return;
     onAddCategory(selectedDeptId, newCatName.trim(), slaValue, slaUnit, defaultPriority);
     setNewCatName('');
+  };
+
+  const handleUserFieldChange = (field: keyof CreateUserPayload, value: string) => {
+    setUserForm((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateUserStatus(null);
+
+    if (
+      !userForm.firstName.trim() ||
+      !userForm.lastName.trim() ||
+      !userForm.email.trim() ||
+      !userForm.employeeId.trim() ||
+      !userForm.departmentId ||
+      !userForm.designation.trim()
+    ) {
+      setCreateUserStatus({
+        type: 'error',
+        message: 'First name, last name, email, employee ID, department, and designation are required.'
+      });
+      return;
+    }
+
+    setCreatingUser(true);
+    try {
+      const result = await onCreateUser({
+        ...userForm,
+        firstName: userForm.firstName.trim(),
+        lastName: userForm.lastName.trim(),
+        email: userForm.email.trim(),
+        employeeId: userForm.employeeId.trim(),
+        designation: userForm.designation.trim(),
+        reportingManager: userForm.reportingManager.trim(),
+        reportingManagerEmail: userForm.reportingManagerEmail.trim(),
+        company: userForm.company?.trim() || 'Aaradhya Group',
+        password: userForm.password?.trim() || undefined
+      });
+
+      if (!result.success) {
+        setCreateUserStatus({
+          type: 'error',
+          message: result.error || 'User onboarding failed.'
+        });
+        return;
+      }
+
+      setCreateUserStatus({
+        type: 'success',
+        message: `${result.user?.name || 'Employee'} account created successfully. Default password is employee ID unless a custom password was entered.`
+      });
+      setUserForm((prev) => ({
+        ...prev,
+        firstName: '',
+        lastName: '',
+        email: '',
+        employeeId: '',
+        designation: '',
+        reportingManager: '',
+        reportingManagerEmail: '',
+        password: '',
+        role: 'User'
+      }));
+    } catch (error: any) {
+      setCreateUserStatus({
+        type: 'error',
+        message: error.message || 'User onboarding failed.'
+      });
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
+  const handleSaveEscalationConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEscalationRuleStatus(null);
+
+    const designationLevels = escalationLadderInput
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (!selectedDeptId || designationLevels.length === 0) {
+      setEscalationRuleStatus({
+        type: 'error',
+        message: 'Select a department and provide at least one designation tier.'
+      });
+      return;
+    }
+
+    setSavingEscalationRule(true);
+    try {
+      const result = await onSaveEscalationRule(selectedDeptId, designationLevels);
+      if (!result.success) {
+        setEscalationRuleStatus({
+          type: 'error',
+          message: result.error || 'Escalation ladder save failed.'
+        });
+        return;
+      }
+
+      setEscalationRuleStatus({
+        type: 'success',
+        message: 'Department-wise escalation ladder saved successfully.'
+      });
+    } finally {
+      setSavingEscalationRule(false);
+    }
+  };
+
+  const handleDeleteEmployee = async (user: UserSession) => {
+    const confirmed = confirm(`Delete employee account for ${user.name} (${user.email})?`);
+    if (!confirmed) return;
+
+    setDeletingEmployeeEmail(user.email);
+    setCreateUserStatus(null);
+    try {
+      const result = await onDeleteUser(user.email);
+      if (!result.success) {
+        setCreateUserStatus({
+          type: 'error',
+          message: result.error || 'Employee delete failed.'
+        });
+        return;
+      }
+
+      setCreateUserStatus({
+        type: 'success',
+        message: result.message || `${user.name} deleted successfully.`
+      });
+    } finally {
+      setDeletingEmployeeEmail(null);
+    }
   };
 
   const handleResetEmployeePassword = async (user: UserSession) => {
@@ -336,6 +602,60 @@ export default function AdminConfigPanel({
       )}
 
       <div className="bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+        <div className="flex items-center justify-between gap-3 pb-3 border-b border-gray-50">
+          <div>
+            <h4 className="text-sm font-bold text-slate-800">Employee Directory</h4>
+            <p className="text-[11px] text-slate-400">View and delete employee accounts from the admin panel.</p>
+          </div>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-bold text-slate-600">
+            {managedEmployees.length} Employees
+          </span>
+        </div>
+
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={employeeListSearch}
+            onChange={(e) => setEmployeeListSearch(e.target.value)}
+            placeholder="Search employee list by name, email, ID, department, or designation"
+            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs"
+          />
+        </div>
+
+        <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+          {managedEmployees.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-xs text-slate-400">
+              No employee accounts matched your search.
+            </div>
+          ) : (
+            managedEmployees.map((user) => (
+              <div key={user.email} className="rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm font-semibold text-slate-800 break-words">{user.name}</p>
+                    <p className="text-[10px] font-mono text-slate-400 break-all">{user.email}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {(user.departmentName || 'No Department')} • {(user.designation || 'No Designation')} • {(user.employeeId || 'No Employee ID')}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteEmployee(user)}
+                    disabled={deletingEmployeeEmail === user.email}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-rose-200 bg-white px-3 py-2 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>{deletingEmployeeEmail === user.email ? 'Deleting...' : 'Delete'}</span>
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
           <div className="rounded-2xl bg-indigo-50 p-2 text-indigo-600">
             <KeyRound className="w-4.5 h-4.5" />
@@ -405,11 +725,244 @@ export default function AdminConfigPanel({
           )}
         </div>
       </div>
+      </div>
 
-    </div>
+      <div className="md:col-span-2 flex flex-col gap-6">
+      <div className="order-2 bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+        <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
+          <div className="rounded-2xl bg-emerald-50 p-2 text-emerald-600">
+            <UserPlus className="w-4.5 h-4.5" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-800 text-sm">Employee Onboarding</h3>
+            <p className="text-[11px] text-gray-400">Create department-wise user accounts for the admin portal.</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleCreateUser} className="space-y-4">
+          {createUserStatus && (
+            <div className={`rounded-2xl border px-3.5 py-3 text-xs ${
+              createUserStatus.type === 'success'
+                ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
+                : 'border-rose-100 bg-rose-50 text-rose-800'
+            }`}>
+              {createUserStatus.message}
+            </div>
+          )}
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">First Name</label>
+              <div className="relative">
+                <UserPlus className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <input value={userForm.firstName} onChange={(e) => handleUserFieldChange('firstName', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs" />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Last Name</label>
+              <input value={userForm.lastName} onChange={(e) => handleUserFieldChange('lastName', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs" />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Email</label>
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <input type="email" value={userForm.email} onChange={(e) => handleUserFieldChange('email', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs" />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Employee ID</label>
+              <div className="relative">
+                <IdCard className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <input value={userForm.employeeId} onChange={(e) => handleUserFieldChange('employeeId', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs" />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Department</label>
+              <div className="relative">
+                <Building2 className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <select value={userForm.departmentId} onChange={(e) => handleUserFieldChange('departmentId', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs">
+                  {departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Designation</label>
+              <div className="relative">
+                <Briefcase className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <input value={userForm.designation} onChange={(e) => handleUserFieldChange('designation', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs" />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Reporting Manager</label>
+              <input value={userForm.reportingManager} onChange={(e) => handleUserFieldChange('reportingManager', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs" />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Manager Email</label>
+              <input type="email" value={userForm.reportingManagerEmail} onChange={(e) => handleUserFieldChange('reportingManagerEmail', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs" />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Company</label>
+              <select
+                value={userForm.company}
+                onChange={(e) => handleUserFieldChange('company', e.target.value)}
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs"
+              >
+                {companyOptions.map((company) => (
+                  <option key={company} value={company}>
+                    {company}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Custom Password (Optional)</label>
+              <input type="text" value={userForm.password} onChange={(e) => handleUserFieldChange('password', e.target.value)} placeholder="Leave blank to use Employee ID" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs" />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] leading-relaxed text-blue-800">
+            The onboarding form stores the employee profile details directly on the user account, so the same data appears in the profile view after login.
+          </div>
+
+          <button
+            type="submit"
+            disabled={creatingUser}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+          >
+            <UserPlus className="h-4 w-4" />
+            {creatingUser ? 'Creating Account...' : 'Create Employee Account'}
+          </button>
+        </form>
+      </div>
+
+      <div className="order-3 grid grid-cols-1 xl:grid-cols-1 gap-6">
+      <div className="bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+        <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
+          <div className="rounded-2xl bg-amber-50 p-2 text-amber-600">
+            <GitBranch className="w-4.5 h-4.5" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-800 text-sm">Escalation Ladder</h3>
+            <p className="text-[11px] text-gray-400">Set designation-wise escalation flow for the selected department.</p>
+          </div>
+        </div>
+
+        {escalationRuleStatus && (
+          <div className={`rounded-2xl border px-3.5 py-3 text-xs ${
+            escalationRuleStatus.type === 'success'
+              ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
+              : 'border-rose-100 bg-rose-50 text-rose-800'
+          }`}>
+            {escalationRuleStatus.message}
+          </div>
+        )}
+
+        <form onSubmit={handleSaveEscalationConfig} className="space-y-4">
+          <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Selected Department</p>
+            <select
+              value={selectedDeptId}
+              onChange={(e) => setSelectedDeptId(e.target.value)}
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"
+            >
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">
+              Designation Ladder
+            </label>
+            <textarea
+              rows={4}
+              value={escalationLadderInput}
+              onChange={(e) => setEscalationLadderInput(e.target.value)}
+              placeholder="Example: Intern, Trainee, Manager, Dept Head"
+              className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-xs leading-relaxed"
+            />
+            <p className="mt-1.5 text-[11px] leading-relaxed text-gray-500">
+              Add designation levels in escalation order, separated by commas. Final fallback remains the department head.
+            </p>
+          </div>
+
+          {selectedEscalationRule && (
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-800">
+              Active ladder: {selectedEscalationRule.designationLevels.join(' -> ')}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={savingEscalationRule}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-amber-300"
+          >
+            <GitBranch className="h-4 w-4" />
+            {savingEscalationRule ? 'Saving Ladder...' : 'Save Escalation Ladder'}
+          </button>
+        </form>
+
+        <div className="border-t border-slate-100 pt-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-bold text-slate-800">All Department Ladders</h4>
+              <p className="text-[11px] text-slate-400">Auto-generated from current department and designation data, with manual edits supported.</p>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-bold text-slate-600">
+              {displayedEscalationRules.length} Ladders
+            </span>
+          </div>
+
+          <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
+            {displayedEscalationRules.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-xs text-slate-400">
+                No department ladder is available yet.
+              </div>
+            ) : (
+              displayedEscalationRules
+                .slice()
+                .sort((a, b) => a.departmentName.localeCompare(b.departmentName))
+                .map((rule) => (
+                  <div key={rule.id} className="rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 space-y-1.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-800">{rule.departmentName}</p>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDeptId(rule.departmentId)}
+                        className="rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[10px] font-bold text-amber-700 transition hover:bg-amber-50"
+                      >
+                        Open
+                      </button>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-slate-600">
+                      {rule.designationLevels.length > 0 ? rule.designationLevels.join(' -> ') : 'No ladder configured'}
+                    </p>
+                  </div>
+                ))
+            )}
+          </div>
+        </div>
+      </div>
+      </div>
 
       {/* 2. CATEGORIES AND SLA CONFIGURATION (Right 2/3) */}
-      <div className="md:col-span-2 bg-white p-5 rounded-[28px] border border-gray-200 shadow-[0_18px_50px_rgba(15,23,42,0.07)] flex flex-col space-y-4">
+      <div className="order-1 bg-white p-5 rounded-[28px] border border-gray-200 shadow-[0_18px_50px_rgba(15,23,42,0.07)] flex flex-col space-y-4">
         
         {/* Selected department header */}
         <div className="pb-4 border-b border-gray-100 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
@@ -576,6 +1129,7 @@ export default function AdminConfigPanel({
           </p>
         </div>
 
+      </div>
       </div>
 
     </div>

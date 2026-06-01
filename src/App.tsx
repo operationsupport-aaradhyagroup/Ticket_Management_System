@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Department, ComplaintCategory, Ticket, UserSession, SLAUnit, TicketStatus, SLAStatus, TicketPriority, SentEmail } from './types';
+import { ComplaintCategory, CreateTicketPayload, CreateUserPayload, Department, EscalationRule, SentEmail, SLAStatus, SLAUnit, Ticket, TicketPriority, TicketStatus, UserSession } from './types';
 import { computeSLAStatus, isTicketAssignedToUser, isTicketRaisedByUser, wasTicketHistoricallyAssignedToUser } from './utils';
 
 // Import our custom modules
@@ -21,8 +21,6 @@ import {
   Settings,
   HelpCircle,
   TrendingUp,
-  FastForward,
-  RotateCcw,
   Plus,
   LogOut,
   Database,
@@ -48,6 +46,7 @@ export default function App() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [companyUsers, setCompanyUsers] = useState<UserSession[]>([]);
   const [sentEmails, setSentEmails] = useState<SentEmail[]>([]);
+  const [escalationRules, setEscalationRules] = useState<EscalationRule[]>([]);
   
   // App states
   const [dbType, setDbType] = useState<string>('Detecting...');
@@ -63,12 +62,10 @@ export default function App() {
   // New ticket modal trigger
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const autoEscalatingTicketIdsRef = useRef<Set<string>>(new Set());
   const oneSignalInitRef = useRef(false);
 
-  // Simulated Time values for counting SLA breach hours reactively
-  const [systemClock, setSystemClock] = useState<Date>(() => new Date('2026-05-26T04:35:05Z'));
-  const [clockOffsetMs, setClockOffsetMs] = useState<number>(0);
+  // Live reference time for SLA countdowns and status calculations
+  const [referenceTime, setReferenceTime] = useState<Date>(() => new Date());
 
   // 1. Verify token on startup
   useEffect(() => {
@@ -112,15 +109,16 @@ export default function App() {
       }
 
       // Load core entities
-      const [deptsRes, catsRes, tktsRes, usersRes, emailsRes] = await Promise.all([
+      const [deptsRes, catsRes, tktsRes, usersRes, emailsRes, escalationRulesRes] = await Promise.all([
         fetch('/api/departments', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/categories', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/tickets', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/users', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/emails', { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch('/api/emails', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('/api/escalation-rules', { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
-      if (!deptsRes.ok || !catsRes.ok || !tktsRes.ok || !usersRes.ok || !emailsRes.ok) {
+      if (!deptsRes.ok || !catsRes.ok || !tktsRes.ok || !usersRes.ok || !emailsRes.ok || !escalationRulesRes.ok) {
         throw new Error('Some database layers failed to retrieve data from server.');
       }
 
@@ -129,12 +127,14 @@ export default function App() {
       const tktsData = await tktsRes.json();
       const usersData = await usersRes.json();
       const emailsData = await emailsRes.json();
+      const escalationRulesData = await escalationRulesRes.json();
 
       setDepartments(deptsData.departments);
       setCategories(catsData.categories);
       setTickets(tktsData.tickets);
       setCompanyUsers(usersData.users || []);
       setSentEmails(emailsData.emails || []);
+      setEscalationRules(escalationRulesData.rules || []);
     } catch (err: any) {
       setApiError(err.message || 'Error occurred fetching backend resources.');
     } finally {
@@ -215,31 +215,18 @@ export default function App() {
     setCategories([]);
     setTickets([]);
     setCompanyUsers([]);
+    setEscalationRules([]);
     setActiveTab('raised');
     oneSignalInitRef.current = false;
   };
 
-  // 3. Real-Time ticking simulation ticking loop
+  // 3. Real-time ticking loop for SLA countdowns
   useEffect(() => {
     const interval = setInterval(() => {
-      setSystemClock(prev => new Date(prev.getTime() + 1000));
+      setReferenceTime(new Date());
     }, 1000);
     return () => clearInterval(interval);
   }, []);
-
-  // Compute simulated time
-  const currentSimulatedTime = useMemo(() => {
-    return new Date(systemClock.getTime() + clockOffsetMs);
-  }, [systemClock, clockOffsetMs]);
-
-  const accelerateTime = (minutes: number) => {
-    setClockOffsetMs(prev => prev + minutes * 60 * 1000);
-  };
-
-  const resetSimulatedTime = () => {
-    setClockOffsetMs(0);
-    setSystemClock(new Date('2026-05-26T04:35:05Z'));
-  };
 
   // Find active ticket details
   const selectedTicket = useMemo(() => {
@@ -262,19 +249,32 @@ export default function App() {
     if (activeTab === 'breached') {
       return tickets.filter((ticket) =>
         wasTicketHistoricallyAssignedToUser(ticket, currentUser) &&
-        computeSLAStatus(ticket, currentSimulatedTime) === 'SLA Breached'
+        computeSLAStatus(ticket, referenceTime) === 'SLA Breached'
       );
     }
     return tickets;
-  }, [tickets, activeTab, currentUser, currentSimulatedTime]);
+  }, [tickets, activeTab, currentUser, referenceTime]);
 
   const profileUser = useMemo(() => {
     if (!currentUser) return null;
     return companyUsers.find(user => user.email.toLowerCase() === currentUser.email.toLowerCase()) || currentUser;
   }, [companyUsers, currentUser]);
 
+  const liveClockLabel = useMemo(() => {
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }).format(referenceTime);
+  }, [referenceTime]);
+
   // 4. Mutation callbacks hitting our Express database backend
-  const handleCreateTicketInput = async (newTicket: Ticket) => {
+  const handleCreateTicketInput = async (newTicket: CreateTicketPayload) => {
     if (!token) return;
     try {
       setDataLoading(true);
@@ -328,6 +328,9 @@ export default function App() {
     if (!token) return;
     try {
       setDataLoading(true);
+      const previousTicket = tickets.find((ticket) => ticket.id === updatedTicket.id) || null;
+      const dueDateChanged = !!previousTicket && previousTicket.slaDueDate !== updatedTicket.slaDueDate;
+
       const res = await fetch(`/api/tickets/${updatedTicket.id}`, {
         method: 'PUT',
         headers: {
@@ -343,6 +346,9 @@ export default function App() {
       }
 
       await fetchDbData(); // Refresh list cleanly
+      if (dueDateChanged) {
+        alert('Due date updated successfully.');
+      }
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -377,25 +383,6 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    if (!token || tickets.length === 0) return;
-
-    const overdueTickets = tickets.filter(ticket => {
-      if (ticket.isEscalated) return false;
-      if (ticket.status === 'Resolved' || ticket.status === 'Closed') return false;
-      if (autoEscalatingTicketIdsRef.current.has(ticket.id)) return false;
-      return computeSLAStatus(ticket, currentSimulatedTime) === 'SLA Breached';
-    });
-
-    for (const ticket of overdueTickets) {
-      autoEscalatingTicketIdsRef.current.add(ticket.id);
-      handleEscalateTicket(ticket.id, 'Auto-SLA-Breach')
-        .finally(() => {
-          autoEscalatingTicketIdsRef.current.delete(ticket.id);
-        });
-    }
-  }, [tickets, currentSimulatedTime, token]);
-
   const handleAddNewDepartment = async (name: string) => {
     if (!token) return;
     try {
@@ -417,6 +404,115 @@ export default function App() {
       await fetchDbData();
     } catch (err: any) {
       alert(err.message);
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  const handleCreateUser = async (payload: CreateUserPayload) => {
+    if (!token) {
+      return { success: false, error: 'Your session has expired. Please sign in again.' };
+    }
+
+    try {
+      setDataLoading(true);
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const rawResponse = await res.text();
+      let result: any = {};
+      try {
+        result = rawResponse ? JSON.parse(rawResponse) : {};
+      } catch {
+        result = { error: rawResponse || 'Unexpected server response.' };
+      }
+
+      if (!res.ok) {
+        throw new Error(result.error || `User creation failed with status ${res.status}.`);
+      }
+
+      await fetchDbData();
+      return { success: true, user: result.user };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'User creation failed.' };
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (email: string) => {
+    if (!token) {
+      return { success: false, error: 'Your session has expired. Please sign in again.' };
+    }
+
+    try {
+      setDataLoading(true);
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const rawResponse = await res.text();
+      let result: any = {};
+      try {
+        result = rawResponse ? JSON.parse(rawResponse) : {};
+      } catch {
+        result = { error: rawResponse || 'Unexpected server response.' };
+      }
+
+      if (!res.ok) {
+        throw new Error(result.error || 'User delete failed.');
+      }
+
+      await fetchDbData();
+      return { success: true, message: result.message as string };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'User delete failed.' };
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  const handleSaveEscalationRule = async (departmentId: string, designationLevels: string[]) => {
+    if (!token) {
+      return { success: false, error: 'Your session has expired. Please sign in again.' };
+    }
+
+    try {
+      setDataLoading(true);
+      const res = await fetch('/api/escalation-rules', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ departmentId, designationLevels })
+      });
+
+      const rawResponse = await res.text();
+      let result: any = {};
+      try {
+        result = rawResponse ? JSON.parse(rawResponse) : {};
+      } catch {
+        result = { error: rawResponse || 'Unexpected server response.' };
+      }
+
+      if (!res.ok) {
+        throw new Error(result.error || 'Escalation rule save failed.');
+      }
+
+      await fetchDbData();
+      return { success: true, rule: result.rule as EscalationRule };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Escalation rule save failed.' };
     } finally {
       setDataLoading(false);
     }
@@ -612,51 +708,16 @@ export default function App() {
           {/* Persona role indicator & Clock */}
           <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 xl:justify-end xl:pl-4">
             
-            {/* Live Clock Simulator interface */}
+            {/* Live clock indicator */}
             <div className="w-full sm:w-auto bg-slate-900/34 border border-white/10 px-4 py-3 rounded-[24px] flex items-center gap-3 text-xs shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl">
               <div className="h-10 w-10 rounded-2xl bg-blue-500/12 border border-blue-300/16 flex items-center justify-center shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
                 <Clock className="w-4.5 h-4.5 text-blue-300 animate-pulse" />
               </div>
               <div className="min-w-0 sm:min-w-[185px]">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.22em] leading-none">Simulation Clock</span>
+                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.22em] leading-none">Live Clock</span>
                 <span className="font-mono text-white text-sm md:text-[15px] font-semibold tracking-tight">
-                  {currentSimulatedTime.toLocaleDateString()} {currentSimulatedTime.toLocaleTimeString()} UTC
+                  {liveClockLabel} IST
                 </span>
-              </div>
-
-              {/* Incremental testing fast timers */}
-              <div className="flex flex-wrap items-center gap-1 pl-0 sm:pl-3 sm:border-l border-white/10">
-                <button
-                  onClick={() => accelerateTime(15)}
-                  className="px-2.5 py-1.5 bg-white/7 text-white hover:bg-white/12 rounded-xl hover:text-blue-200 tracking-tight text-[10px] flex items-center gap-0.5 border border-white/8 transition-all"
-                  title="Forward 15 minutes"
-                >
-                  <FastForward className="w-3 h-3" />
-                  <span>+15m</span>
-                </button>
-                <button
-                  onClick={() => accelerateTime(120)}
-                  className="px-2.5 py-1.5 bg-white/7 text-white hover:bg-white/12 rounded-xl hover:text-blue-200 tracking-tight text-[10px] flex items-center gap-0.5 border border-white/8 transition-all"
-                  title="Forward 2 hours"
-                >
-                  <FastForward className="w-3 h-3" />
-                  <span>+2h</span>
-                </button>
-                <button
-                  onClick={() => accelerateTime(1440)}
-                  className="px-2.5 py-1.5 bg-white/7 text-white hover:bg-white/12 rounded-xl hover:text-blue-200 tracking-tight text-[10px] flex items-center gap-0.5 border border-white/8 transition-all"
-                  title="Forward 1 day"
-                >
-                  <FastForward className="w-3 h-3" />
-                  <span>+1d</span>
-                </button>
-                <button
-                  onClick={resetSimulatedTime}
-                  className="p-1.5 bg-white/7 hover:bg-white/12 text-slate-400 hover:text-white rounded-xl border border-white/8 transition-all"
-                  title="Reset offset to default"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                </button>
               </div>
             </div>
 
@@ -766,7 +827,7 @@ export default function App() {
                 <span>
                   My Breached Tickets ({tickets.filter((ticket) =>
                     wasTicketHistoricallyAssignedToUser(ticket, currentUser) &&
-                    computeSLAStatus(ticket, currentSimulatedTime) === 'SLA Breached'
+                    computeSLAStatus(ticket, referenceTime) === 'SLA Breached'
                   ).length})
                 </span>
               </button>
@@ -870,12 +931,12 @@ export default function App() {
         {/* Dynamic context rendering */}
         {selectedTicket ? (
           /* Render Particular Selected Ticket Detail contextual controller */
-          <TicketDetailView
-            ticket={selectedTicket}
-            referenceTime={currentSimulatedTime}
-            currentUser={currentUser}
-            isAdmin={currentUser?.role === 'Admin'}
-            companyUsers={companyUsers}
+            <TicketDetailView
+              ticket={selectedTicket}
+              referenceTime={referenceTime}
+              currentUser={currentUser}
+              isAdmin={currentUser?.role === 'Admin'}
+              companyUsers={companyUsers}
             onClose={() => setSelectedTicketId(null)}
             onUpdateTicket={handleUpdateTicketInput}
             onEscalateTicket={handleEscalateTicket}
@@ -889,7 +950,7 @@ export default function App() {
                 tickets={visibleTickets}
                 departments={departments}
                 categories={categories}
-                referenceTime={currentSimulatedTime}
+                referenceTime={referenceTime}
                 onSelectTicket={(t) => setSelectedTicketId(t.id)}
                 onOpenCreateTicket={() => setIsCreateModalOpen(true)}
               />
@@ -901,7 +962,8 @@ export default function App() {
                 departments={departments}
                 categories={categories}
                 companyUsers={companyUsers}
-                referenceTime={currentSimulatedTime}
+                escalationRules={escalationRules}
+                referenceTime={referenceTime}
                 sentEmails={sentEmails}
                 onSelectTicket={(ticket) => setSelectedTicketId(ticket.id)}
               />
@@ -912,9 +974,13 @@ export default function App() {
                 departments={departments}
                 categories={categories}
                 companyUsers={companyUsers}
+                escalationRules={escalationRules}
                 dbType={dbType}
                 onAddDepartment={handleAddNewDepartment}
                 onAddCategory={handleAddNewCategory}
+                onCreateUser={handleCreateUser}
+                onDeleteUser={handleDeleteUser}
+                onSaveEscalationRule={handleSaveEscalationRule}
                 onDeleteDepartment={handleDeleteDepartment}
                 onDeleteCategory={handleDeleteCategory}
                 onMigrateDatabase={handleMigrateDatabase}
@@ -934,7 +1000,6 @@ export default function App() {
             setIsCreateModalOpen(false);
           }}
           departments={departments}
-          categories={categories}
           currentUser={currentUser}
           companyUsers={companyUsers}
           onSubmit={handleCreateTicketInput}

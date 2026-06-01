@@ -26,11 +26,19 @@ export default function TicketDetailView({
   onEscalateTicket,
   sentEmails = []
 }: TicketDetailViewProps) {
+  const toDateTimeLocalInput = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (part: number) => String(part).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+
   const [assignedAgent, setAssignedAgent] = useState(ticket.assignedAgent || 'Unassigned');
   const [ticketStatus, setTicketStatus] = useState<TicketStatus>(ticket.status);
   const [ticketPriority, setTicketPriority] = useState<TicketPriority>(ticket.priority);
   const [newRemark, setNewRemark] = useState('');
   const [localRemarks, setLocalRemarks] = useState<TicketRemarkItem[]>(ticket.remarks || []);
+  const [editableDueDate, setEditableDueDate] = useState(toDateTimeLocalInput(ticket.slaDueDate));
 
   // Manual SLA Override Panel State
   const [showSlaOverride, setShowSlaOverride] = useState(false);
@@ -47,6 +55,7 @@ export default function TicketDetailView({
     setShowSlaOverride(false);
     setNewRemark('');
     setLocalRemarks(ticket.remarks || []);
+    setEditableDueDate(toDateTimeLocalInput(ticket.slaDueDate));
   }, [ticket]);
 
   // Robust agents resolver list
@@ -84,6 +93,13 @@ export default function TicketDetailView({
   const ticketRemarks = useMemo(() => {
     return localRemarks;
   }, [localRemarks]);
+
+  const canEditDueDate = useMemo(() => {
+    const currentEmail = currentUser.email.toLowerCase();
+    const assignedEmail = (ticket.assignedAgentEmail || '').toLowerCase();
+    const assignedName = (ticket.assignedAgent || '').trim().toLowerCase();
+    return isAdmin || assignedEmail === currentEmail || (!!currentUser.name && assignedName === currentUser.name.trim().toLowerCase());
+  }, [currentUser.email, currentUser.name, isAdmin, ticket.assignedAgent, ticket.assignedAgentEmail]);
 
   // SLA Container Styles
   const slaContainerStyles = useMemo(() => {
@@ -161,6 +177,25 @@ export default function TicketDetailView({
       });
     }
 
+    let nextDueDate = ticket.slaDueDate;
+    if (canEditDueDate && editableDueDate) {
+      const parsedDueDate = new Date(editableDueDate);
+      if (Number.isNaN(parsedDueDate.getTime())) {
+        alert('Please enter a valid due date.');
+        return;
+      }
+
+      nextDueDate = parsedDueDate.toISOString();
+      if (nextDueDate !== ticket.slaDueDate) {
+        historyEntries.push({
+          id: 'hist-dd-' + Date.now(),
+          timestamp,
+          userEmail: currentUser.email,
+          action: `Due date changed from '${new Date(ticket.slaDueDate).toLocaleString()}' to '${parsedDueDate.toLocaleString()}'`
+        });
+      }
+    }
+
     const updatedTicket: Ticket = {
       ...ticket,
       status: ticketStatus,
@@ -169,6 +204,7 @@ export default function TicketDetailView({
         ? (assignedAgentRecord?.email || ticket.assignedAgentEmail || '')
         : (ticket.assignedAgentEmail || ''),
       priority: ticketPriority,
+      slaDueDate: nextDueDate,
       resolvedAt: ticketStatus === 'Resolved' ? timestamp : ticketStatus === 'Closed' ? (ticket.resolvedAt || timestamp) : null,
       history: historyEntries
     };
@@ -644,6 +680,22 @@ export default function TicketDetailView({
                   {isAdmin
                     ? 'All employees in the separate company DB are valid agents.'
                     : 'Assigned agent can only be changed by an admin.'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">Due Date</label>
+                <input
+                  type="datetime-local"
+                  value={editableDueDate}
+                  onChange={(e) => setEditableDueDate(e.target.value)}
+                  disabled={!canEditDueDate}
+                  className="w-full text-xs font-medium border border-gray-200 rounded-lg p-2.5 bg-white focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">
+                  {canEditDueDate
+                    ? 'Assigned user or admin can update the due date. Every change is recorded in audit logs.'
+                    : 'Due date can be changed only by the assigned user or an admin.'}
                 </p>
               </div>
 

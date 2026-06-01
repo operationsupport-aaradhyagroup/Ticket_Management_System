@@ -10,6 +10,7 @@ dotenv.config();
 // Define DB fallback file path
 const DISK_DB_PATH = path.join(process.cwd(), 'db_disk.json');
 const EMPLOYEE_IMPORT_PATH = path.join(process.cwd(), 'data', 'employee-import.json');
+const ESCALATION_RULES_DISK_PATH = path.join(process.cwd(), 'escalation-rules.json');
 
 interface IImportedEmployeeRow {
   employeeId: string;
@@ -69,6 +70,15 @@ export interface ISentEmail {
   sentAt: string;
   notificationType: 'Assignment' | 'Escalation' | 'Closure';
   escalationType?: 'Manual' | 'Auto-SLA-Breach';
+}
+
+export interface IEscalationRule {
+  id: string;
+  departmentId: string;
+  departmentName: string;
+  designationLevels: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface IComplaintCategory {
@@ -148,7 +158,8 @@ let isMongoConnected = false;
 
 // Register schemas for Mongoose if it's active
 let UserSchema: any, DeptSchema: any, CatSchema: any, TicketSchema: any, EmailSchema: any;
-let UserModel: any, DeptModel: any, CatModel: any, TicketModel: any, EmailModel: any;
+let EscalationRuleSchema: any;
+let UserModel: any, DeptModel: any, CatModel: any, TicketModel: any, EmailModel: any, EscalationRuleModel: any;
 
 if (useMongo) {
   try {
@@ -242,14 +253,101 @@ if (useMongo) {
       escalationType: { type: String, enum: ['Manual', 'Auto-SLA-Breach'], required: false }
     });
 
+    EscalationRuleSchema = new Schema({
+      id: { type: String, unique: true, required: true },
+      departmentId: { type: String, required: true },
+      departmentName: { type: String, required: true },
+      designationLevels: [{ type: String }],
+      createdAt: { type: String, required: true },
+      updatedAt: { type: String, required: true }
+    });
+
     UserModel = mongoose.models.User || mongoose.model('User', UserSchema);
     DeptModel = mongoose.models.Department || mongoose.model('Department', DeptSchema);
     CatModel = mongoose.models.Category || mongoose.model('Category', CatSchema);
     TicketModel = mongoose.models.Ticket || mongoose.model('Ticket', TicketSchema);
     EmailModel = mongoose.models.SentEmail || mongoose.model('SentEmail', EmailSchema);
+    EscalationRuleModel = mongoose.models.EscalationRule || mongoose.model('EscalationRule', EscalationRuleSchema);
   } catch (err) {
     console.warn('Mongoose Schemas failed to prepare: ', err);
   }
+}
+
+function loadEscalationRulesFromDisk(): IEscalationRule[] {
+  try {
+    if (!fs.existsSync(ESCALATION_RULES_DISK_PATH)) {
+      fs.writeFileSync(ESCALATION_RULES_DISK_PATH, JSON.stringify([], null, 2), 'utf-8');
+      return [];
+    }
+    const raw = fs.readFileSync(ESCALATION_RULES_DISK_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Failed reading escalation rules store', error);
+    return [];
+  }
+}
+
+function saveEscalationRulesToDisk(rules: IEscalationRule[]) {
+  try {
+    fs.writeFileSync(ESCALATION_RULES_DISK_PATH, JSON.stringify(rules, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('Failed writing escalation rules store', error);
+  }
+}
+
+function normalizeDesignation(value: string): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function designationRank(value: string): number {
+  const normalized = normalizeDesignation(value);
+  if (!normalized) return 999;
+  if (/\b(intern|trainee|apprentice)\b/.test(normalized)) return 10;
+  if (/\b(junior|assistant|support|runner|field assistant)\b/.test(normalized)) return 20;
+  if (/\b(executive|officer|associate|adviser|advisor|developer|designer|specialist|engineer|accountant|coordinator|controller)\b/.test(normalized)) return 30;
+  if (/\b(lead|senior)\b/.test(normalized)) return 40;
+  if (/\b(manager|asm)\b/.test(normalized)) return 50;
+  if (/\b(head)\b/.test(normalized)) return 60;
+  if (/\b(general manager|business head|ceo)\b/.test(normalized)) return 70;
+  return 35;
+}
+
+function inferEscalationRules(users: IUser[], departments: IDepartment[]): IEscalationRule[] {
+  const now = new Date().toISOString();
+  return departments.map((department) => {
+    const uniqueDesignations = Array.from(
+      new Set(
+        users
+          .filter((user) => user.departmentId === department.id)
+          .map((user) => String(user.designation || '').trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => {
+      const rankDiff = designationRank(a) - designationRank(b);
+      if (rankDiff !== 0) return rankDiff;
+      return a.localeCompare(b);
+    });
+
+    const hasHeadLikeDesignation = uniqueDesignations.some((designation) => /\bhead\b/i.test(designation));
+    const designationLevels = hasHeadLikeDesignation
+      ? uniqueDesignations
+      : [...uniqueDesignations, 'Dept Head'].filter(Boolean);
+
+    return {
+      id: `esc-rule-${department.id}`,
+      departmentId: department.id,
+      departmentName: department.name,
+      designationLevels,
+      createdAt: now,
+      updatedAt: now
+    };
+  });
 }
 
 // Synchronous disk reading helpers
@@ -921,6 +1019,19 @@ export const dbActions = {
     return diskDb.users[userIndex];
   },
 
+  deleteUser: async (email: string): Promise<boolean> => {
+    const emailKey = email.toLowerCase().trim();
+    if (isMongoConnected) {
+      await UserModel.deleteOne({ email: emailKey });
+      return true;
+    }
+
+    const beforeCount = diskDb.users.length;
+    diskDb.users = diskDb.users.filter((user) => user.email.toLowerCase().trim() !== emailKey);
+    saveToDisk();
+    return diskDb.users.length < beforeCount;
+  },
+
   // --- DEPARTMENTS SECTION ---
   getDepartments: async (): Promise<IDepartment[]> => {
     if (isMongoConnected) {
@@ -1026,6 +1137,77 @@ export const dbActions = {
     diskDb.emails.unshift(email);
     saveToDisk();
     return email;
+  },
+
+  // --- ESCALATION RULES SECTION ---
+  getEscalationRules: async (): Promise<IEscalationRule[]> => {
+    if (isMongoConnected) {
+      const existingRules = await EscalationRuleModel.find({}).lean();
+      const departments = await dbActions.getDepartments();
+      const users = await dbActions.getUsers();
+      const inferredRules = inferEscalationRules(users, departments);
+
+      for (const inferredRule of inferredRules) {
+        const existingRule = existingRules.find((rule) => rule.departmentId === inferredRule.departmentId);
+        if (!existingRule) {
+          await EscalationRuleModel.updateOne(
+            { departmentId: inferredRule.departmentId },
+            {
+              $set: {
+                departmentName: inferredRule.departmentName,
+                designationLevels: inferredRule.designationLevels,
+                updatedAt: inferredRule.updatedAt
+              },
+              $setOnInsert: {
+                id: inferredRule.id,
+                createdAt: inferredRule.createdAt
+              }
+            },
+            { upsert: true }
+          );
+        }
+      }
+
+      return await EscalationRuleModel.find({}).sort({ departmentName: 1 }).lean();
+    }
+    const existingRules = loadEscalationRulesFromDisk();
+    const inferredRules = inferEscalationRules(diskDb.users, diskDb.departments);
+    const mergedRules = [...existingRules];
+
+    for (const inferredRule of inferredRules) {
+      if (!mergedRules.some((rule) => rule.departmentId === inferredRule.departmentId)) {
+        mergedRules.push(inferredRule);
+      }
+    }
+
+    saveEscalationRulesToDisk(mergedRules);
+    return mergedRules.sort((a, b) => a.departmentName.localeCompare(b.departmentName));
+  },
+
+  upsertEscalationRule: async (rule: IEscalationRule): Promise<IEscalationRule> => {
+    if (isMongoConnected) {
+      const { id, createdAt, ...updatableFields } = rule;
+      await EscalationRuleModel.updateOne(
+        { departmentId: rule.departmentId },
+        { $set: updatableFields, $setOnInsert: { id, createdAt } },
+        { upsert: true }
+      );
+      const saved = await EscalationRuleModel.findOne({ departmentId: rule.departmentId }).lean();
+      return saved;
+    }
+
+    const rules = loadEscalationRulesFromDisk();
+    const index = rules.findIndex((item) => item.departmentId === rule.departmentId);
+    if (index === -1) {
+      rules.push(rule);
+    } else {
+      rules[index] = {
+        ...rules[index],
+        ...rule
+      };
+    }
+    saveEscalationRulesToDisk(rules);
+    return rules.find((item) => item.departmentId === rule.departmentId)!;
   },
 
   // Manual Triggered Full Migration/Transfer method from JSON Disk fallback to MongoDB
