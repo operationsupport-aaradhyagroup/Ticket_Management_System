@@ -15,7 +15,6 @@ import UserProfileModal from './components/UserProfileModal';
 import {
   ShieldCheck,
   User,
-  Clock,
   LayoutDashboard,
   Ticket as TicketIcon,
   Settings,
@@ -23,7 +22,6 @@ import {
   TrendingUp,
   Plus,
   LogOut,
-  Database,
   RefreshCw,
   AlertCircle
 } from 'lucide-react';
@@ -100,6 +98,7 @@ export default function App() {
     if (!token) return;
     setDataLoading(true);
     setApiError(null);
+    setReferenceTime(new Date());
     try {
       // Check database health & technology mode
       const statusRes = await fetch('/api/health');
@@ -220,14 +219,6 @@ export default function App() {
     oneSignalInitRef.current = false;
   };
 
-  // 3. Real-time ticking loop for SLA countdowns
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setReferenceTime(new Date());
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
   // Find active ticket details
   const selectedTicket = useMemo(() => {
     if (!selectedTicketId) return null;
@@ -259,19 +250,6 @@ export default function App() {
     if (!currentUser) return null;
     return companyUsers.find(user => user.email.toLowerCase() === currentUser.email.toLowerCase()) || currentUser;
   }, [companyUsers, currentUser]);
-
-  const liveClockLabel = useMemo(() => {
-    return new Intl.DateTimeFormat('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true
-    }).format(referenceTime);
-  }, [referenceTime]);
 
   // 4. Mutation callbacks hitting our Express database backend
   const handleCreateTicketInput = async (newTicket: CreateTicketPayload) => {
@@ -726,33 +704,15 @@ export default function App() {
               />
             </div>
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] bg-white/8 text-cyan-200 border border-white/10 px-3 py-1 rounded-full font-mono whitespace-nowrap shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-md">
-                  Full-Stack v1.5
-                </span>
-              </div>
-              <h1 className="mt-3 text-[1.26rem] sm:text-[1.52rem] md:text-[1.98rem] font-black tracking-[-0.045em] leading-[1.02] text-white max-w-2xl">
-                Aaradhya Group Ticket&nbsp;Management System
+              <h1 className="text-[1.26rem] sm:text-[1.52rem] md:text-[1.98rem] font-black tracking-[-0.045em] leading-[1.02] text-white max-w-2xl">
+                AARADHYA GROUP
+                <span className="mt-1 block font-semibold">(Internal Ticket Management System)</span>
               </h1>
             </div>
           </div>
 
-          {/* Persona role indicator & Clock */}
+          {/* Active account controls */}
           <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 xl:justify-end xl:pl-4">
-            
-            {/* Live clock indicator */}
-            <div className="w-full sm:w-auto bg-slate-900/34 border border-white/10 px-4 py-3 rounded-[24px] flex items-center gap-3 text-xs shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl">
-              <div className="h-10 w-10 rounded-2xl bg-blue-500/12 border border-blue-300/16 flex items-center justify-center shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                <Clock className="w-4.5 h-4.5 text-blue-300 animate-pulse" />
-              </div>
-              <div className="min-w-0 sm:min-w-[185px]">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.22em] leading-none">Live Clock</span>
-                <span className="font-mono text-white text-sm md:text-[15px] font-semibold tracking-tight">
-                  {liveClockLabel} IST
-                </span>
-              </div>
-            </div>
-
             {/* Current Active Account Card */}
             <button
               onClick={() => setIsProfileModalOpen(true)}
@@ -905,10 +865,21 @@ export default function App() {
           </div>
 
           <div className="flex items-center justify-between sm:justify-end space-x-4">
-            {/* Active Core Storage Indicator */}
-            <div className="hidden sm:flex items-center space-x-1.5 text-xs text-slate-500 font-mono">
-              <Database className="w-3.5 h-3.5 text-blue-500" />
-              <span>Engine: <strong>{dbType}</strong></span>
+            <div
+              className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold ${
+                dbType === 'MongoDB' && !apiError
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-rose-200 bg-rose-50 text-rose-700'
+              }`}
+              title={dbType === 'MongoDB' && !apiError ? 'MongoDB connected' : 'MongoDB not connected'}
+              role="status"
+            >
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${
+                  dbType === 'MongoDB' && !apiError ? 'bg-emerald-500' : 'bg-rose-500'
+                }`}
+              />
+              <span>{dbType === 'MongoDB' && !apiError ? 'MongoDB Connected' : 'MongoDB Not Connected'}</span>
             </div>
 
             <button
@@ -928,27 +899,6 @@ export default function App() {
       {/* 3. CORE ROUTER APPLICATION VIEW SPACE */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full overflow-y-auto">
         
-        {/* Dynamic active user header alert for user testing */}
-        <div className="bg-blue-50 border border-blue-100 p-3.5 rounded-2xl mb-6 flex items-center justify-between text-xs text-blue-800">
-          <div className="flex items-center space-x-2">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-            </span>
-            <p>
-              {currentUser?.role === 'Admin' ? (
-                <span>
-                  <strong>Admin Session Active ({currentUser?.email})</strong>: You possess absolute SLA overriding rights. You can append custom departments, configure category-wise SLAs, assign agents, and update ticket states directly.
-                </span>
-              ) : (
-                <span>
-                  <strong>Corporate Employee Workspace Active ({currentUser?.name})</strong>: You have a separate view/navbar where we list only complaints you raised or those assigned to you.
-                </span>
-              )}
-            </p>
-          </div>
-        </div>
-
         {/* Dynamic API status warning bar */}
         {apiError && (
           <div className="p-4 bg-rose-50 border border-rose-100 text-rose-800 text-xs rounded-2xl mb-6 flex items-start space-x-2">
@@ -994,9 +944,7 @@ export default function App() {
                 departments={departments}
                 categories={categories}
                 companyUsers={companyUsers}
-                escalationRules={escalationRules}
                 referenceTime={referenceTime}
-                sentEmails={sentEmails}
                 onSelectTicket={(ticket) => setSelectedTicketId(ticket.id)}
               />
             )}

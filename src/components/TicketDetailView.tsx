@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Ticket, TicketStatus, SLAStatus, SLAUnit, UserSession, TicketPriority, SentEmail, TicketRemarkItem } from '../types';
-import { formatSLACountdown, computeSLAStatus, calculateDueDate } from '../utils';
-import { X, Clock, User, ShieldAlert, AlertTriangle, ArrowLeft, Send, CheckCircle2, RefreshCw, Calendar, FileText, Mail } from 'lucide-react';
+import { formatSLACountdown, computeSLAStatus, calculateDueDate, formatDateTime } from '../utils';
+import { X, Clock, User, ShieldAlert, AlertTriangle, ArrowLeft, Send, CheckCircle2, RefreshCw, FileText, Mail } from 'lucide-react';
 
 interface TicketDetailViewProps {
   ticket: Ticket;
@@ -14,6 +14,12 @@ interface TicketDetailViewProps {
   onEscalateTicket?: (ticketId: string, escalationType: 'Manual' | 'Auto-SLA-Breach') => void;
   sentEmails?: SentEmail[];
 }
+
+const withoutEmailAddresses = (text: string) =>
+  text
+    .replace(/\s*<?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}>?/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 
 export default function TicketDetailView({
   ticket,
@@ -130,7 +136,7 @@ export default function TicketDetailView({
       case 'Within SLA':
         return {
           bg: 'bg-blue-50 border-blue-100 text-blue-800',
-          title: 'HEALTHY SLA BUFFER',
+          title: 'WITHIN SLA',
           desc: 'Operating safely within resolution boundaries. Assign agents to proceed.',
           themeColor: 'blue'
         };
@@ -191,7 +197,7 @@ export default function TicketDetailView({
           id: 'hist-dd-' + Date.now(),
           timestamp,
           userEmail: currentUser.email,
-          action: `Due date changed from '${new Date(ticket.slaDueDate).toLocaleString()}' to '${parsedDueDate.toLocaleString()}'`
+          action: `Due date changed from '${formatDateTime(ticket.slaDueDate)}' to '${formatDateTime(parsedDueDate)}'`
         });
       }
     }
@@ -287,7 +293,7 @@ export default function TicketDetailView({
         </button>
 
         <span className="text-xs font-mono text-gray-400">
-          Ref: ID-{ticket.id}
+          Ticket ID: {ticket.id}
         </span>
       </div>
 
@@ -304,7 +310,7 @@ export default function TicketDetailView({
                 {ticket.departmentName}
               </span>
               <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-md">
-                {ticket.categoryName}
+                {ticket.categoryName === 'Manual Entry' ? 'Operational Desk Controls' : ticket.categoryName}
               </span>
               <span className={`px-2.5 py-0.5 text-xs font-bold rounded-md ${
                 ticket.priority === 'Critical' ? 'bg-red-100 text-red-800' :
@@ -327,25 +333,23 @@ export default function TicketDetailView({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 text-xs text-gray-400">
               <div>
                 <span className="block font-medium text-gray-400">File Submitter</span>
-                <span className="text-gray-700 font-semibold">{ticket.creatorName}</span> ({ticket.creatorEmail})
+                <span className="text-gray-700 font-semibold">{ticket.creatorName}</span>
               </div>
               <div>
                 <span className="block font-medium text-gray-400">Submitted On</span>
-                <span className="text-gray-700 font-semibold">{new Date(ticket.createdAt).toLocaleString()}</span>
+                <span className="text-gray-700 font-semibold">{formatDateTime(ticket.createdAt)}</span>
               </div>
             </div>
           </div>
 
-          {/* Interactive SLA Timer Gauge Box */}
-          <div className={`p-4 sm:p-6 rounded-2xl border ${slaContainerStyles.bg} shadow-xs space-y-4`}>
+          {/* ETA and countdown */}
+          <div className={`p-4 sm:p-6 rounded-2xl border ${slaContainerStyles.bg} shadow-xs`}>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="space-y-0.5">
                 <span className="text-[10px] tracking-wider font-extrabold uppercase text-gray-400 bg-white/60 px-2 py-0.5 rounded-sm">
-                  {slaContainerStyles.title}
+                  ETA Date &amp; Time
                 </span>
-                <p className="text-xs text-gray-600">
-                  {slaContainerStyles.desc}
-                </p>
+                <p className="text-sm font-semibold text-gray-800">{formatDateTime(ticket.slaDueDate)}</p>
               </div>
 
               {/* Countdown timer layout with dynamic size */}
@@ -355,29 +359,9 @@ export default function TicketDetailView({
                   <span className={`block text-lg font-mono font-black ${countdown.isOverdue ? 'text-rose-600' : 'text-gray-800'}`}>
                     {countdown.text}
                   </span>
-                  <span className="text-[10px] text-gray-400 block tracking-tight">Resolution Limit Countdown</span>
+                  <span className="text-[10px] text-gray-400 block tracking-tight">Countdown</span>
                 </div>
               </div>
-            </div>
-
-            {/* Micro SLA parameters metadata */}
-            <div className="bg-white/50 p-3 rounded-xl text-xs space-y-1.5 border border-white/30">
-              <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:items-center text-gray-600">
-                <span>SLA Configuration:</span>
-                <span className="font-semibold text-gray-800 capitalize">
-                  {ticket.slaType} ({ticket.slaDurationValue} {ticket.slaDurationUnit})
-                </span>
-              </div>
-              <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:items-center text-gray-600">
-                <span>Deadline Limit (UTC):</span>
-                <span className="font-mono text-gray-800 break-all">{new Date(ticket.slaDueDate).toLocaleString()}</span>
-              </div>
-              {ticket.resolvedAt && (
-                <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:items-center text-emerald-700 font-semibold">
-                  <span>Completed At:</span>
-                  <span>{new Date(ticket.resolvedAt).toLocaleString()}</span>
-                </div>
-              )}
             </div>
 
             {/* Quick Link/Button for overriding */}
@@ -409,19 +393,9 @@ export default function TicketDetailView({
               
               <div className="bg-white p-4 rounded-xl border border-indigo-100 text-xs space-y-2">
                 <div className="flex flex-col gap-1 sm:flex-row sm:justify-between border-b border-gray-100 pb-1.5 text-gray-500">
-                  <span>Notification Source:</span>
-                  <span className="font-semibold text-gray-700">SLA Workflow Engine</span>
-                </div>
-                <div className="flex flex-col gap-1 sm:flex-row sm:justify-between border-b border-gray-100 pb-1.5 text-gray-500">
                   <span>Escalation Owner:</span>
                   <span className="font-semibold text-gray-800">
                     {escalatedEmail?.toName || `${ticket.departmentName} Escalation Owner`}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-1 sm:flex-row sm:justify-between border-b border-gray-105 pb-1.5 text-gray-500">
-                  <span>Contact:</span>
-                  <span className="font-mono font-semibold text-gray-800">
-                    &lt;{escalatedEmail?.toEmail || 'escalation.owner@company.com'}&gt;
                   </span>
                 </div>
                 <div className="flex flex-col gap-1 sm:flex-row sm:justify-between border-b border-gray-100 pb-1.5 text-gray-500">
@@ -432,7 +406,7 @@ export default function TicketDetailView({
                   </span>
                 </div>
                 <div className="pt-1.5 text-gray-500">
-                  <span className="block font-medium mb-1">Reference:</span>
+                  <span className="block font-medium mb-1">Professional Subject:</span>
                   <span className="block italic text-[11px] font-mono text-gray-850 p-2 bg-gray-50 rounded border border-gray-100">
                     {escalatedEmail?.subject || `[URGENT ESCALATION] ${ticket.id} SLA Limit Triggered - ${ticket.title}`}
                   </span>
@@ -525,7 +499,7 @@ export default function TicketDetailView({
           <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-2 border-b border-gray-50">
               <div className="min-w-0">
-                <h3 className="font-bold text-gray-800 text-sm">Assigner / Assignee Conversation</h3>
+                <h3 className="font-bold text-gray-800 text-sm">Live Chat</h3>
                 <p className="text-[11px] text-gray-400 mt-1">
                   Remarks, replies, and handoff notes between the ticket owner, assigner, and assigned employee.
                 </p>
@@ -551,10 +525,9 @@ export default function TicketDetailView({
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-gray-900">{remark.userName}</p>
-                          <p className="text-[10px] uppercase tracking-wider text-gray-400 break-all">{remark.userEmail}</p>
                         </div>
                         <span className="text-[10px] font-mono text-gray-400">
-                          {new Date(remark.timestamp).toLocaleString()}
+                          {formatDateTime(remark.timestamp)}
                         </span>
                       </div>
                       <p className="mt-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{remark.message}</p>
@@ -601,14 +574,11 @@ export default function TicketDetailView({
                   {/* Bullet */}
                   <div className="absolute -left-[22.5px] top-1 w-2.5 h-2.5 rounded-full border border-white bg-blue-500" />
                   <span className="font-mono text-gray-400 block text-[10px]">
-                    {new Date(h.timestamp).toLocaleString()}
+                    {formatDateTime(h.timestamp)}
                   </span>
                   <p className="text-gray-700 font-medium">
-                    {h.action}
+                    {withoutEmailAddresses(h.action)}
                   </p>
-                  <span className="text-[10px] font-semibold text-gray-400/90 uppercase tracking-wider block">
-                    Triggered by: {h.userEmail}
-                  </span>
                 </div>
               ))}
             </div>
@@ -676,11 +646,6 @@ export default function TicketDetailView({
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-400 mt-1">
-                  {isAdmin
-                    ? 'All employees in the separate company DB are valid agents.'
-                    : 'Assigned agent can only be changed by an admin.'}
-                </p>
               </div>
 
               <div>
@@ -692,11 +657,6 @@ export default function TicketDetailView({
                   disabled={!canEditDueDate}
                   className="w-full text-xs font-medium border border-gray-200 rounded-lg p-2.5 bg-white focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
                 />
-                <p className="text-[10px] text-gray-400 mt-1">
-                  {canEditDueDate
-                    ? 'Assigned user or admin can update the due date. Every change is recorded in audit logs.'
-                    : 'Due date can be changed only by the assigned user or an admin.'}
-                </p>
               </div>
 
               {/* Submit changes button */}
@@ -709,19 +669,6 @@ export default function TicketDetailView({
                 <span>Save Desk Transitions</span>
               </button>
             </form>
-          </div>
-
-          {/* Quick Context Guidance cards */}
-          <div className="bg-blue-50/50 p-5 rounded-2xl border border-blue-100 space-y-3">
-            <h4 className="text-xs font-bold text-blue-800 uppercase tracking-widest flex items-center gap-1.5">
-              <Calendar className="w-4 h-4" />
-              SLA Compliance Rules
-            </h4>
-            <ul className="text-xs text-blue-700/90 list-disc list-inside space-y-1 ml-0.5">
-              <li>Near breach indicates critical warning window.</li>
-              <li>SLA status freezes when transitioned into Resolved or Closed.</li>
-              <li>Default SLA is applied dynamically based on complaint categories.</li>
-            </ul>
           </div>
 
         </div>

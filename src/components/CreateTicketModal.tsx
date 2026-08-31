@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CreateTicketPayload, Department, TicketPriority, UserSession } from '../types';
-import { AlertCircle, CalendarClock, Check, UserCheck, X } from 'lucide-react';
+import { CalendarClock, Check, UserCheck, X } from 'lucide-react';
 
 interface CreateTicketModalProps {
   isOpen: boolean;
@@ -114,12 +114,7 @@ export default function CreateTicketModal({
       <div className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-xl">
         <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
           <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1">
-              <h3 className="text-lg font-bold text-slate-900">Create Work Item</h3>
-              <p className="text-xs text-slate-500">
-                Title, description, and due date are entered manually. Users can choose any department while profile data stays separate.
-              </p>
-            </div>
+            <h3 className="text-lg font-bold text-slate-900">Create New Ticket</h3>
             <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600">
               <X className="h-5 w-5" />
             </button>
@@ -227,15 +222,6 @@ export default function CreateTicketModal({
                   ))}
                 </select>
               </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-              <p>
-                Department SLA and category rules are bypassed for now. This item will open immediately and use the manually entered due date.
-              </p>
             </div>
           </div>
 

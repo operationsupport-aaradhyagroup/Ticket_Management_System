@@ -1132,14 +1132,18 @@ export const dbActions = {
     const existingRules = loadEscalationRulesFromDisk();
     const inferredRules = inferEscalationRules(diskDb.users, diskDb.departments);
     const mergedRules = [...existingRules];
+    let rulesChanged = false;
 
     for (const inferredRule of inferredRules) {
       if (!mergedRules.some((rule) => rule.departmentId === inferredRule.departmentId)) {
         mergedRules.push(inferredRule);
+        rulesChanged = true;
       }
     }
 
-    saveEscalationRulesToDisk(mergedRules);
+    if (rulesChanged) {
+      saveEscalationRulesToDisk(mergedRules);
+    }
     return mergedRules.sort((a, b) => a.departmentName.localeCompare(b.departmentName));
   },
 

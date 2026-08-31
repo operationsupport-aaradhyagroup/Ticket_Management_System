@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, RefreshCw, Search, Ticket as TicketIcon } from 'lucide-react';
 import { Department, Ticket, UserSession } from '../types';
-import { computeSLAStatus, resolveAccountableAssignedUser } from '../utils';
+import { computeSLAStatus, resolveAccountableAssignedUser, formatDateTime } from '../utils';
 
 interface EmployeeTicketInsightsProps {
   departments: Department[];
@@ -472,7 +472,7 @@ export default function EmployeeTicketInsights({
                               </div>
                               <p className="text-[11px] text-gray-500 break-words">{ticket.description}</p>
                               <p className="text-[10px] text-gray-400">
-                                {ticket.departmentName} • {ticket.categoryName} • Created {new Date(ticket.createdAt).toLocaleString()}
+                                {ticket.departmentName} • {ticket.categoryName} • Created {formatDateTime(ticket.createdAt)}
                               </p>
                             </div>
 

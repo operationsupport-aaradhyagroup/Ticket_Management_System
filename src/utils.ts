@@ -1,5 +1,14 @@
 import { Ticket, SLAUnit, SLAStatus, UserSession } from './types';
 
+export function formatDateTime(value: string | Date | null | undefined): string {
+  if (!value) return 'Not available';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not available';
+
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 /**
  * Calculates the SLA due date based on starting date and duration
  */
