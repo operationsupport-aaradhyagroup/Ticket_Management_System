@@ -6,6 +6,10 @@ interface AdminConfigPanelProps {
   departments: Department[];
   categories: ComplaintCategory[];
   companyUsers: UserSession[];
+  employeeOptions: {
+    companies: string[];
+    designationsByDepartmentId: Record<string, string[]>;
+  };
   escalationRules: EscalationRule[];
   dbType: string;
   onAddDepartment: (name: string) => void;
@@ -24,6 +28,7 @@ export default function AdminConfigPanel({
   departments,
   categories,
   companyUsers,
+  employeeOptions,
   escalationRules,
   dbType,
   onAddDepartment,
@@ -52,6 +57,7 @@ export default function AdminConfigPanel({
   const [createUserStatus, setCreateUserStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [employeeListSearch, setEmployeeListSearch] = useState('');
   const [deletingEmployeeEmail, setDeletingEmployeeEmail] = useState<string | null>(null);
+  const [isCustomDesignation, setIsCustomDesignation] = useState(false);
   const [userForm, setUserForm] = useState<CreateUserPayload>({
     firstName: '',
     lastName: '',
@@ -226,7 +232,7 @@ export default function AdminConfigPanel({
   }, [companyUsers, employeeListSearch]);
 
   const companyOptions = useMemo(() => {
-    const options = new Set<string>(['Aaradhya Group']);
+    const options = new Set<string>(['Aaradhya Group', ...employeeOptions.companies]);
     companyUsers.forEach((user) => {
       const companyName = String(user.company || '').trim();
       if (companyName) {
@@ -238,7 +244,18 @@ export default function AdminConfigPanel({
       options.add(draftCompany);
     }
     return Array.from(options).sort((a, b) => a.localeCompare(b));
-  }, [companyUsers, userForm.company]);
+  }, [companyUsers, employeeOptions.companies, userForm.company]);
+
+  const designationOptions = useMemo(() => {
+    const options = new Set<string>(employeeOptions.designationsByDepartmentId[userForm.departmentId] || []);
+    companyUsers.forEach((user) => {
+      if (user.departmentId === userForm.departmentId && user.designation?.trim()) {
+        options.add(user.designation.trim());
+      }
+    });
+    if (!isCustomDesignation && userForm.designation.trim()) options.add(userForm.designation.trim());
+    return Array.from(options).sort((a, b) => a.localeCompare(b));
+  }, [companyUsers, employeeOptions.designationsByDepartmentId, isCustomDesignation, userForm.departmentId, userForm.designation]);
 
   const handleCreateDept = (e: React.FormEvent) => {
     e.preventDefault();
@@ -319,6 +336,7 @@ export default function AdminConfigPanel({
         password: '',
         role: 'User'
       }));
+      setIsCustomDesignation(false);
     } catch (error: any) {
       setCreateUserStatus({
         type: 'error',
@@ -858,7 +876,14 @@ export default function AdminConfigPanel({
               <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Department</label>
               <div className="relative">
                 <Building2 className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                <select value={userForm.departmentId} onChange={(e) => handleUserFieldChange('departmentId', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs">
+                <select
+                  value={userForm.departmentId}
+                  onChange={(e) => {
+                    setUserForm((prev) => ({ ...prev, departmentId: e.target.value, designation: '' }));
+                    setIsCustomDesignation(false);
+                  }}
+                  className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs"
+                >
                   {departments.map((department) => (
                     <option key={department.id} value={department.id}>
                       {department.name}
@@ -870,10 +895,37 @@ export default function AdminConfigPanel({
 
             <div>
               <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Designation</label>
-              <div className="relative">
+              <div className="relative space-y-2">
                 <Briefcase className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                <input value={userForm.designation} onChange={(e) => handleUserFieldChange('designation', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs" />
+                <select
+                  value={isCustomDesignation ? '__custom__' : userForm.designation}
+                  onChange={(e) => {
+                    if (e.target.value === '__custom__') {
+                      setIsCustomDesignation(true);
+                      handleUserFieldChange('designation', '');
+                    } else {
+                      setIsCustomDesignation(false);
+                      handleUserFieldChange('designation', e.target.value);
+                    }
+                  }}
+                  className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs"
+                >
+                  <option value="">Select designation</option>
+                  {designationOptions.map((designation) => (
+                    <option key={designation} value={designation}>{designation}</option>
+                  ))}
+                  <option value="__custom__">＋ Add new designation</option>
+                </select>
               </div>
+              {isCustomDesignation && (
+                <input
+                  autoFocus
+                  value={userForm.designation}
+                  onChange={(e) => handleUserFieldChange('designation', e.target.value)}
+                  placeholder="Enter new designation"
+                  className="mt-2 w-full rounded-xl border border-blue-200 bg-blue-50/40 px-3 py-2.5 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              )}
             </div>
 
             <div>

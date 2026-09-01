@@ -1032,8 +1032,11 @@ app.get('/cron', async (req, res) => {
   // Users: GET (all company users)
   app.get('/api/users', authenticateToken, async (req, res) => {
     try {
-      const users = await dbActions.getUsers();
-      res.json({ users: users.map(sanitizeUser) });
+      const [users, employeeOptions] = await Promise.all([
+        dbActions.getUsers(),
+        dbActions.getEmployeeOptions()
+      ]);
+      res.json({ users: users.map(sanitizeUser), employeeOptions });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

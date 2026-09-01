@@ -49,6 +49,7 @@ export interface IUser {
   reportingManager?: string;
   reportingManagerEmail?: string;
   isDeleted?: boolean;
+  isManuallyManaged?: boolean;
 }
 
 export interface IDepartment {
@@ -180,7 +181,8 @@ if (useMongo) {
       designation: { type: String, default: '' },
       reportingManager: { type: String, default: '' },
       reportingManagerEmail: { type: String, default: '' },
-      isDeleted: { type: Boolean, default: false }
+      isDeleted: { type: Boolean, default: false },
+      isManuallyManaged: { type: Boolean, default: false }
     });
 
     DeptSchema = new Schema({
@@ -820,7 +822,7 @@ async function seedDefaults() {
 
       if (importedEmployeeEmails.length > 0) {
         await UserModel.updateMany(
-          { email: { $in: importedEmployeeEmails }, role: { $ne: 'Admin' } },
+          { email: { $in: importedEmployeeEmails }, role: { $ne: 'Admin' }, isManuallyManaged: { $ne: true } },
           { $set: { isDeleted: true } }
         );
       }
@@ -836,7 +838,7 @@ async function seedDefaults() {
     diskDb.users = mergeSeedUsers(diskDb.users);
     const importedEmailSet = new Set(importedEmployeeEmails);
     diskDb.users = diskDb.users.map(user =>
-      user.role !== 'Admin' && importedEmailSet.has(user.email.toLowerCase().trim())
+      user.role !== 'Admin' && !user.isManuallyManaged && importedEmailSet.has(user.email.toLowerCase().trim())
         ? { ...user, isDeleted: true }
         : user
     );
@@ -934,7 +936,7 @@ export const dbActions = {
     if (isMongoConnected) {
       return await UserModel.findOneAndUpdate(
         { email: user.email },
-        { $set: { ...user, isDeleted: false } },
+        { $set: { ...user, isDeleted: false, isManuallyManaged: true } },
         { new: true, upsert: true, setDefaultsOnInsert: true }
       ).lean();
     }
@@ -942,9 +944,9 @@ export const dbActions = {
       existingUser => existingUser.email.toLowerCase().trim() === user.email
     );
     if (existingIndex === -1) {
-      diskDb.users.push({ ...user, isDeleted: false });
+      diskDb.users.push({ ...user, isDeleted: false, isManuallyManaged: true });
     } else {
-      diskDb.users[existingIndex] = { ...user, isDeleted: false };
+      diskDb.users[existingIndex] = { ...user, isDeleted: false, isManuallyManaged: true };
     }
     saveToDisk();
     return user;
@@ -955,6 +957,43 @@ export const dbActions = {
       return await UserModel.find({ isDeleted: { $ne: true } }).lean();
     }
     return diskDb.users.filter(user => !user.isDeleted);
+  },
+
+  getEmployeeOptions: async (): Promise<{
+    companies: string[];
+    designationsByDepartmentId: Record<string, string[]>;
+  }> => {
+    const storedUsers: IUser[] = isMongoConnected
+      ? await UserModel.find({ role: { $ne: 'Admin' } }).lean()
+      : diskDb.users.filter(user => user.role !== 'Admin');
+    const importedRows = loadEmployeeImportRows();
+    const companies = new Set<string>(['Aaradhya Group']);
+    const designationSets = new Map<string, Set<string>>();
+
+    const addOption = (departmentId: string, designation?: string, company?: string) => {
+      const cleanCompany = String(company || '').trim();
+      const cleanDesignation = String(designation || '').trim();
+      if (cleanCompany) companies.add(cleanCompany);
+      if (!departmentId || !cleanDesignation) return;
+      if (!designationSets.has(departmentId)) designationSets.set(departmentId, new Set());
+      designationSets.get(departmentId)!.add(cleanDesignation);
+    };
+
+    storedUsers.forEach(user => addOption(user.departmentId || '', user.designation, user.company));
+    importedRows.forEach(row => {
+      const department = resolveDepartmentSeed(row.department);
+      addOption(department.id, row.designation, row.company);
+    });
+
+    return {
+      companies: Array.from(companies).sort((a, b) => a.localeCompare(b)),
+      designationsByDepartmentId: Object.fromEntries(
+        Array.from(designationSets.entries()).map(([departmentId, values]) => [
+          departmentId,
+          Array.from(values).sort((a, b) => a.localeCompare(b))
+        ])
+      )
+    };
   },
 
   updateUserPassword: async (email: string, passwordHash: string): Promise<IUser | null> => {

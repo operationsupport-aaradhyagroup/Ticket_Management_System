@@ -32,6 +32,11 @@ declare global {
   }
 }
 
+interface EmployeeOptions {
+  companies: string[];
+  designationsByDepartmentId: Record<string, string[]>;
+}
+
 export default function App() {
   // Core Session authentication elements
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('sla_token'));
@@ -43,6 +48,10 @@ export default function App() {
   const [categories, setCategories] = useState<ComplaintCategory[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [companyUsers, setCompanyUsers] = useState<UserSession[]>([]);
+  const [employeeOptions, setEmployeeOptions] = useState<EmployeeOptions>({
+    companies: ['Aaradhya Group'],
+    designationsByDepartmentId: {}
+  });
   const [sentEmails, setSentEmails] = useState<SentEmail[]>([]);
   const [escalationRules, setEscalationRules] = useState<EscalationRule[]>([]);
   
@@ -132,6 +141,7 @@ export default function App() {
       setCategories(catsData.categories);
       setTickets(tktsData.tickets);
       setCompanyUsers(usersData.users || []);
+      setEmployeeOptions(usersData.employeeOptions || { companies: ['Aaradhya Group'], designationsByDepartmentId: {} });
       setSentEmails(emailsData.emails || []);
       setEscalationRules(escalationRulesData.rules || []);
     } catch (err: any) {
@@ -954,6 +964,7 @@ export default function App() {
                 departments={departments}
                 categories={categories}
                 companyUsers={companyUsers}
+                employeeOptions={employeeOptions}
                 escalationRules={escalationRules}
                 dbType={dbType}
                 onAddDepartment={handleAddNewDepartment}
