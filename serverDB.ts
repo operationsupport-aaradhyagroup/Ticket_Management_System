@@ -48,6 +48,7 @@ export interface IUser {
   designation?: string;
   reportingManager?: string;
   reportingManagerEmail?: string;
+  isDeleted?: boolean;
 }
 
 export interface IDepartment {
@@ -178,7 +179,8 @@ if (useMongo) {
       departmentName: { type: String, default: '' },
       designation: { type: String, default: '' },
       reportingManager: { type: String, default: '' },
-      reportingManagerEmail: { type: String, default: '' }
+      reportingManagerEmail: { type: String, default: '' },
+      isDeleted: { type: Boolean, default: false }
     });
 
     DeptSchema = new Schema({
@@ -628,21 +630,14 @@ async function seedDefaults() {
   // Helper relative dates
   const LEGACY_DEMO_TICKET_IDS = ['TKT-2491', 'TKT-1082'];
 
-  // Hash password
+  // Only the administrator is seeded as a login account. Imported employees are
+  // retained for department metadata but are not automatic/sample user accounts.
   const salt = await bcrypt.genSalt(10);
-  const defaultAdminHash = await bcrypt.hash('admin123', salt);
   const aaradhyaAdminHash = await bcrypt.hash('Aaradhya@123', salt);
-  const importedUsersWithPasswords: IUser[] = [];
-  for (const importedUser of importedUsers) {
-    importedUsersWithPasswords.push({
-      ...importedUser,
-      passwordHash: await bcrypt.hash(importedUser.employeeId || 'user123', salt)
-    });
-  }
+  const importedEmployeeEmails = importedUsers.map(user => user.email.toLowerCase().trim());
 
   const INITIAL_USERS: IUser[] = [
-    { email: 'aaradhya.admin@company.com', name: 'Aaradhya Group Admin', passwordHash: aaradhyaAdminHash, role: 'Admin', departmentId: 'dept-admin', employeeId: 'AARADHYA-ADMIN', designation: 'Super Admin', departmentName: 'Admin Department', company: 'Aaradhya Group' },
-    ...importedUsersWithPasswords
+    { email: 'aaradhya.admin@company.com', name: 'Aaradhya Group Admin', passwordHash: aaradhyaAdminHash, role: 'Admin', departmentId: 'dept-admin', employeeId: 'AARADHYA-ADMIN', designation: 'Super Admin', departmentName: 'Admin Department', company: 'Aaradhya Group' }
   ];
 
   const MERGED_DEPARTMENTS: IDepartment[] = [...INITIAL_DEPARTMENTS];
@@ -700,7 +695,7 @@ async function seedDefaults() {
       const existingUsers = await UserModel.find({}).lean();
       if (existingUsers.length === 0) {
         await UserModel.insertMany(INITIAL_USERS);
-        console.log('Seeded MongoDB default and company users.');
+        console.log('Seeded MongoDB administrator account.');
       } else {
         for (const seedUser of INITIAL_USERS) {
           await UserModel.updateOne(
@@ -728,6 +723,7 @@ async function seedDefaults() {
           );
         }
       }
+
       const deptCount = await DeptModel.countDocuments();
       if (deptCount === 0) {
         await DeptModel.insertMany(MERGED_DEPARTMENTS);
@@ -822,6 +818,13 @@ async function seedDefaults() {
         console.log(`Auto-Migrated local data to MongoDB: ${uCount} users, ${dCount} depts, ${cCount} cats, ${tCount} tkts, ${eCount} emails.`);
       }
 
+      if (importedEmployeeEmails.length > 0) {
+        await UserModel.updateMany(
+          { email: { $in: importedEmployeeEmails }, role: { $ne: 'Admin' } },
+          { $set: { isDeleted: true } }
+        );
+      }
+
       await TicketModel.deleteMany({ id: { $in: LEGACY_DEMO_TICKET_IDS } });
       await EmailModel.deleteMany({ ticketId: { $in: LEGACY_DEMO_TICKET_IDS } });
 
@@ -831,6 +834,12 @@ async function seedDefaults() {
   } else {
     // Disk DB Mock Seeding
     diskDb.users = mergeSeedUsers(diskDb.users);
+    const importedEmailSet = new Set(importedEmployeeEmails);
+    diskDb.users = diskDb.users.map(user =>
+      user.role !== 'Admin' && importedEmailSet.has(user.email.toLowerCase().trim())
+        ? { ...user, isDeleted: true }
+        : user
+    );
     if (diskDb.departments.length === 0) {
       diskDb.departments = MERGED_DEPARTMENTS;
     } else {
@@ -910,29 +919,42 @@ export const dbActions = {
   // --- USERS SECTION ---
   findUserByEmail: async (email: string): Promise<IUser | null> => {
     if (isMongoConnected) {
-      const u = await UserModel.findOne({ email: email.toLowerCase().trim() });
+      const u = await UserModel.findOne({
+        email: email.toLowerCase().trim(),
+        isDeleted: { $ne: true }
+      });
       return u ? u.toObject() : null;
     }
     const emailKey = email.toLowerCase().trim();
-    return diskDb.users.find(u => u.email.toLowerCase().trim() === emailKey) || null;
+    return diskDb.users.find(u => u.email.toLowerCase().trim() === emailKey && !u.isDeleted) || null;
   },
 
   createUser: async (user: IUser): Promise<IUser> => {
     user.email = user.email.toLowerCase().trim();
     if (isMongoConnected) {
-      const created = await UserModel.create(user);
-      return created.toObject();
+      return await UserModel.findOneAndUpdate(
+        { email: user.email },
+        { $set: { ...user, isDeleted: false } },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      ).lean();
     }
-    diskDb.users.push(user);
+    const existingIndex = diskDb.users.findIndex(
+      existingUser => existingUser.email.toLowerCase().trim() === user.email
+    );
+    if (existingIndex === -1) {
+      diskDb.users.push({ ...user, isDeleted: false });
+    } else {
+      diskDb.users[existingIndex] = { ...user, isDeleted: false };
+    }
     saveToDisk();
     return user;
   },
 
   getUsers: async (): Promise<IUser[]> => {
     if (isMongoConnected) {
-      return await UserModel.find({}).lean();
+      return await UserModel.find({ isDeleted: { $ne: true } }).lean();
     }
-    return diskDb.users;
+    return diskDb.users.filter(user => !user.isDeleted);
   },
 
   updateUserPassword: async (email: string, passwordHash: string): Promise<IUser | null> => {
@@ -960,14 +982,20 @@ export const dbActions = {
   deleteUser: async (email: string): Promise<boolean> => {
     const emailKey = email.toLowerCase().trim();
     if (isMongoConnected) {
-      await UserModel.deleteOne({ email: emailKey });
-      return true;
+      const result = await UserModel.updateOne(
+        { email: emailKey, isDeleted: { $ne: true } },
+        { $set: { isDeleted: true } }
+      );
+      return result.modifiedCount > 0;
     }
 
-    const beforeCount = diskDb.users.length;
-    diskDb.users = diskDb.users.filter((user) => user.email.toLowerCase().trim() !== emailKey);
+    const userIndex = diskDb.users.findIndex(
+      user => user.email.toLowerCase().trim() === emailKey && !user.isDeleted
+    );
+    if (userIndex === -1) return false;
+    diskDb.users[userIndex] = { ...diskDb.users[userIndex], isDeleted: true };
     saveToDisk();
-    return diskDb.users.length < beforeCount;
+    return true;
   },
 
   // --- DEPARTMENTS SECTION ---
