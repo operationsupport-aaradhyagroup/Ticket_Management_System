@@ -1406,7 +1406,7 @@ app.get('/cron', async (req, res) => {
     if (!userEmail) return void res.status(400).json({ error: 'Select the TMS user whose mailbox you are connecting.' });
     const state = jwt.sign({ purpose: 'gmail-oauth', userEmail }, JWT_SECRET, { expiresIn: '10m' });
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    url.search = new URLSearchParams({ client_id: GMAIL_CLIENT_ID, redirect_uri: GMAIL_REDIRECT_URI, response_type: 'code', access_type: 'offline', prompt: 'consent select_account', login_hint: userEmail, scope: 'https://www.googleapis.com/auth/gmail.readonly', state }).toString();
+    url.search = new URLSearchParams({ client_id: GMAIL_CLIENT_ID, redirect_uri: GMAIL_REDIRECT_URI, response_type: 'code', access_type: 'offline', prompt: 'consent', scope: 'https://www.googleapis.com/auth/gmail.readonly', state }).toString();
     res.json({ success: true, data: { authorizationUrl: url.toString() } });
   });
 
