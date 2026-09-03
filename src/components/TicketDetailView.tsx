@@ -11,7 +11,7 @@ interface TicketDetailViewProps {
   companyUsers: UserSession[];
   onClose: () => void;
   onUpdateTicket: (updatedTicket: Ticket) => void;
-  onEscalateTicket?: (ticketId: string, escalationType: 'Manual' | 'Auto-SLA-Breach') => void;
+  onEscalateTicket?: (ticketId: string, escalationType: 'Manual' | 'Auto-SLA-Breach') => Promise<string | null>;
   sentEmails?: SentEmail[];
 }
 
@@ -45,6 +45,8 @@ export default function TicketDetailView({
   const [newRemark, setNewRemark] = useState('');
   const [localRemarks, setLocalRemarks] = useState<TicketRemarkItem[]>(ticket.remarks || []);
   const [editableDueDate, setEditableDueDate] = useState(toDateTimeLocalInput(ticket.slaDueDate));
+  const [escalationError, setEscalationError] = useState<string | null>(null);
+  const [isEscalating, setIsEscalating] = useState(false);
 
   // Manual SLA Override Panel State
   const [showSlaOverride, setShowSlaOverride] = useState(false);
@@ -62,6 +64,7 @@ export default function TicketDetailView({
     setNewRemark('');
     setLocalRemarks(ticket.remarks || []);
     setEditableDueDate(toDateTimeLocalInput(ticket.slaDueDate));
+    setEscalationError(null);
   }, [ticket]);
 
   // Robust agents resolver list
@@ -253,6 +256,16 @@ export default function TicketDetailView({
     setNewRemark('');
   };
 
+  const handleEscalate = async () => {
+    if (!onEscalateTicket || isEscalating) return;
+
+    setEscalationError(null);
+    setIsEscalating(true);
+    const error = await onEscalateTicket(ticket.id, 'Manual');
+    if (error) setEscalationError(error);
+    setIsEscalating(false);
+  };
+
   // Override SLA triggers
   const handleApplySlaOverride = (e: React.FormEvent) => {
     e.preventDefault();
@@ -433,13 +446,19 @@ export default function TicketDetailView({
                 <p className="text-[11px] text-red-700 max-w-md">
                   Trigger escalation to the head of <strong>{ticket.departmentName}</strong> department. This records an escalation event and routes a notification to the configured escalation owner.
                 </p>
+                {escalationError && (
+                  <p role="alert" className="max-w-md rounded-lg border border-red-200 bg-white/80 px-3 py-2 text-[11px] font-medium text-red-800">
+                    {escalationError}
+                  </p>
+                )}
               </div>
               <button
                 type="button"
-                onClick={() => onEscalateTicket && onEscalateTicket(ticket.id, 'Manual')}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs transition duration-150 shrink-0 shadow-xs cursor-pointer"
+                onClick={handleEscalate}
+                disabled={isEscalating}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs transition duration-150 shrink-0 shadow-xs disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Escalate Complaint
+                {isEscalating ? 'Escalating…' : 'Escalate Complaint'}
               </button>
             </div>
           )}

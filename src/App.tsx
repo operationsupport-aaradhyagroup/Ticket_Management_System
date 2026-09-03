@@ -349,7 +349,7 @@ export default function App() {
   };
 
   const handleEscalateTicket = async (ticketId: string, escalationType: 'Manual' | 'Auto-SLA-Breach') => {
-    if (!token) return;
+    if (!token) return 'Your session has expired. Please sign in again.';
     try {
       setDataLoading(true);
       const res = await fetch(`/api/tickets/${ticketId}/escalate`, {
@@ -367,9 +367,10 @@ export default function App() {
       }
 
       await fetchDbData(); // Refresh list cleanly
+      return null;
     } catch (err: any) {
-      // Shhh, if it fails silently or throws an alert, we let the operator know.
       console.warn('Escalation failed:', err.message);
+      return err.message || 'Ticket escalation failed. Please try again.';
     } finally {
       setDataLoading(false);
     }
