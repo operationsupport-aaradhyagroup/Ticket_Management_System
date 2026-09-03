@@ -39,6 +39,8 @@ interface EmployeeOptions {
   designationsByDepartmentId: Record<string, string[]>;
 }
 
+const HIDDEN_CATEGORY_IDS = new Set(['cat-it-1']);
+
 export default function App() {
   // Core Session authentication elements
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('sla_token'));
@@ -140,7 +142,7 @@ export default function App() {
       const escalationRulesData = await escalationRulesRes.json();
 
       setDepartments(deptsData.departments);
-      setCategories(catsData.categories);
+      setCategories(catsData.categories.filter((category: ComplaintCategory) => !HIDDEN_CATEGORY_IDS.has(category.id)));
       setTickets(tktsData.tickets);
       setCompanyUsers(usersData.users || []);
       setEmployeeOptions(usersData.employeeOptions || { companies: ['Aaradhya Group'], designationsByDepartmentId: {} });
