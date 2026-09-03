@@ -1,0 +1,12 @@
+services:
+  - type: cron
+    name: tms-gmail-sync
+    runtime: node
+    buildCommand: npm ci
+    startCommand: node scripts/sync-gmail-cron.mjs
+    schedule: "*/5 * * * *"
+    envVars:
+      - key: TMS_BASE_URL
+        sync: false
+      - key: GMAIL_SYNC_SECRET
+        sync: false

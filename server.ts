@@ -35,6 +35,7 @@ const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID || '';
 const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
 const GMAIL_REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || `${APP_URL.replace(/\/$/, '')}/api/integrations/gmail/callback`;
 const GMAIL_INBOX_EMAIL = (process.env.GMAIL_INBOX_EMAIL || 'operation_support@kisansuvidha.com').toLowerCase();
+const GMAIL_SYNC_SECRET = process.env.GMAIL_SYNC_SECRET || '';
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || '';
 const integrationRateLimiter = new SlidingWindowRateLimiter(API_RATE_LIMIT_WINDOW_MS, API_RATE_LIMIT_MAX);
 const publicRateLimiter = new SlidingWindowRateLimiter(API_RATE_LIMIT_WINDOW_MS, PUBLIC_TICKET_RATE_LIMIT_MAX);
@@ -687,6 +688,13 @@ const authenticateApiKey = (permission: ApiPermission) => async (req: express.Re
 const requireAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (req.user?.role !== 'Admin') return void res.status(403).json({ error: 'Administration rights are required.' });
   next();
+};
+
+const authenticateGmailSync = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const suppliedSecret = String(req.header('Authorization') || '').replace(/^Bearer\s+/i, '');
+  const isValidSecret = GMAIL_SYNC_SECRET && suppliedSecret.length === GMAIL_SYNC_SECRET.length && crypto.timingSafeEqual(Buffer.from(suppliedSecret), Buffer.from(GMAIL_SYNC_SECRET));
+  if (isValidSecret) return next();
+  return authenticateToken(req, res, () => requireAdmin(req, res, next));
 };
 
 const safeApiClient = (client: IApiClient) => ({
@@ -1437,7 +1445,7 @@ app.get('/cron', async (req, res) => {
     }
   });
 
-  app.post('/api/admin/integrations/gmail/sync', authenticateToken, requireAdmin, async (req, res) => {
+  app.post('/api/admin/integrations/gmail/sync', authenticateGmailSync, async (req, res) => {
     try {
       const mailboxes = await dbActions.listGmailIntegrationCredentials();
       const requestedMailboxId = String(req.body.mailboxId || '');
