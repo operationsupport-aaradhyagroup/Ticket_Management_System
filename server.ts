@@ -191,13 +191,12 @@ const extractEmailContext = (email: ISentEmail) => {
     ticketTitle: escapeHtml(email.ticketTitle),
     ticketUrl: getTicketUrl(email.ticketId),
     departmentName: escapeHtml(body.match(/Department:\s*(.+)/)?.[1]?.trim() || 'Not available'),
-    categoryName: escapeHtml(body.match(/Category:\s*(.+)/)?.[1]?.trim() || 'Not available'),
     priority: escapeHtml(body.match(/Priority:\s*(.+)/)?.[1]?.trim() || body.match(/Ticket ID:\s*.+\((.+?) priority\)/)?.[1]?.trim() || 'Not available'),
     raisedBy: escapeHtml(body.match(/Raised By:\s*(.+)/)?.[1]?.trim() || 'Not available'),
     assignedTo: escapeHtml(body.match(/Assigned To:\s*(.+)/)?.[1]?.trim() || 'Not available'),
     finalStatus: escapeHtml(body.match(/Final Status:\s*(.+)/)?.[1]?.trim() || 'Not available'),
     closedAt: escapeHtml(body.match(/Closed At:\s*(.+)/)?.[1]?.trim() || formatDateTime(email.sentAt)),
-    description: escapeHtml(body.match(/Description:\s*([\s\S]*?)\n(?:Department|Category|Priority|SLA Due|Raised By|Registered Server timestamp)/)?.[1]?.trim() || 'Not available'),
+    description: escapeHtml(body.match(/Description:\s*([\s\S]*?)\n(?:Department|Priority|SLA Due|Raised By|Registered Server timestamp)/)?.[1]?.trim() || 'Not available'),
     slaDue: escapeHtml(body.match(/SLA Due:\s*(.+)/)?.[1]?.trim() || formatDateTime(email.sentAt))
   };
 };
@@ -259,13 +258,18 @@ const renderTicketEmailLayout = ({
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
+  <meta name="supported-color-schemes" content="light" />
   <title>${escapeHtml(title)}</title>
+  <style>
+    :root { color-scheme: light; supported-color-schemes: light; }
+  </style>
 </head>
-<body style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:24px 0;">
+<body bgcolor="#f4f7fb" style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#f4f7fb" style="background:#f4f7fb;padding:24px 0;">
     <tr>
       <td align="center">
-        <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:640px;max-width:100%;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #e5e7eb;">
+        <table role="presentation" width="640" cellspacing="0" cellpadding="0" bgcolor="#ffffff" style="width:640px;max-width:100%;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #cbd5e1;">
           <tr>
             <td style="background:linear-gradient(135deg,#0f172a,#1d4ed8);padding:28px 32px;color:#ffffff;">
               <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.8;font-weight:bold;">
@@ -280,19 +284,19 @@ const renderTicketEmailLayout = ({
             </td>
           </tr>
           <tr>
-            <td style="padding:28px 32px;">
-              <div style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#374151;">
+            <td bgcolor="#ffffff" style="padding:28px 32px;background:#ffffff;">
+              <div style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#1e293b;">
                 ${intro}
               </div>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#ffffff" style="border-collapse:collapse;background:#ffffff;border:1px solid #cbd5e1;border-radius:14px;overflow:hidden;">
                 ${summaryRows.map((row, index) => `
                 <tr>
-                  <td style="padding:14px 16px;${index < summaryRows.length - 1 ? 'border-bottom:1px solid #e5e7eb;' : ''}font-size:13px;color:#6b7280;width:180px;">${escapeHtml(row.label)}</td>
-                  <td style="padding:14px 16px;${index < summaryRows.length - 1 ? 'border-bottom:1px solid #e5e7eb;' : ''}font-size:14px;${row.emphasis ? 'font-weight:700;' : row.label === 'Title' || row.label === 'Ticket ID' ? 'font-weight:600;' : ''}color:${toneColor(row.tone)};">${row.value}</td>
+                  <td bgcolor="#f8fafc" style="padding:14px 16px;${index < summaryRows.length - 1 ? 'border-bottom:1px solid #cbd5e1;' : ''}background:#f8fafc;font-size:12px;font-weight:700;color:#475569;width:180px;">${escapeHtml(row.label)}</td>
+                  <td bgcolor="#ffffff" style="padding:14px 16px;${index < summaryRows.length - 1 ? 'border-bottom:1px solid #cbd5e1;' : ''}background:#ffffff;font-size:14px;line-height:1.5;${row.emphasis ? 'font-weight:700;' : row.label === 'Title' || row.label === 'Ticket ID' ? 'font-weight:600;' : ''}color:${toneColor(row.tone)};">${row.value}</td>
                 </tr>`).join('')}
               </table>
               <div style="margin-top:22px;padding:16px 18px;background:${toneMap[alertTone].bg};border:1px solid ${toneMap[alertTone].border};border-radius:14px;">
-                <p style="margin:0;font-size:13px;line-height:1.7;color:#991b1b;">
+                <p style="margin:0;font-size:13px;line-height:1.7;color:${toneMap[alertTone].text};">
                   <strong style="color:${toneMap[alertTone].text};">Action Required:</strong>
                   <span style="color:${toneMap[alertTone].text};">${alertText}</span>
                 </p>
@@ -301,8 +305,8 @@ const renderTicketEmailLayout = ({
             </td>
           </tr>
           <tr>
-            <td style="padding:20px 32px;background:#f9fafb;border-top:1px solid #e5e7eb;">
-              <p style="margin:0;font-size:12px;line-height:1.7;color:#6b7280;">
+            <td bgcolor="#f8fafc" style="padding:20px 32px;background:#f8fafc;border-top:1px solid #cbd5e1;">
+              <p style="margin:0;font-size:12px;line-height:1.7;color:#475569;">
                 Developed &amp; Managed by <strong>Nexora Automations</strong><br />
                 Aaradhya Group Ticket Management System
               </p>
@@ -328,7 +332,6 @@ const buildAssignmentEmailHtml = (email: ISentEmail) => {
       { label: 'Title', value: context.ticketTitle },
       { label: 'Description', value: context.description },
       { label: 'Department', value: context.departmentName },
-      { label: 'Category', value: context.categoryName },
       { label: 'Priority', value: context.priority, emphasis: true, tone: 'info' },
       { label: 'SLA Due', value: context.slaDue },
       { label: 'Raised By', value: context.raisedBy }
@@ -356,7 +359,6 @@ const buildEscalationEmailHtml = (email: ISentEmail) => {
       { label: 'Title', value: context.ticketTitle },
       { label: 'Description', value: context.description },
       { label: 'Department', value: context.departmentName },
-      { label: 'Category', value: context.categoryName },
       { label: 'Priority', value: context.priority, emphasis: true, tone: 'danger' },
       { label: 'SLA Due', value: context.slaDue },
       { label: 'Raised By', value: context.raisedBy }
@@ -380,7 +382,6 @@ const buildClosureEmailHtml = (email: ISentEmail) => {
       { label: 'Title', value: context.ticketTitle },
       { label: 'Description', value: context.description },
       { label: 'Department', value: context.departmentName },
-      { label: 'Category', value: context.categoryName },
       { label: 'Final Status', value: context.finalStatus, emphasis: true, tone: 'success' },
       { label: 'Closed At', value: context.closedAt },
       { label: 'Assigned To', value: context.assignedTo }
@@ -415,7 +416,7 @@ const buildNotificationEmail = ({
       toName: recipientName,
       toEmail: recipientEmail,
       subject: `[TICKET ASSIGNED] ${ticket.id} - ${ticket.title}`,
-      body: `Hello ${recipientName},\n\nA complaint ticket has been assigned to you for action.\n\nTicket ID: ${ticket.id}\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nDepartment: ${ticket.departmentName}\nCategory: ${ticket.categoryName}\nPriority: ${ticket.priority}\nSLA Due: ${new Date(ticket.slaDueDate).toLocaleString()}\nRaised By: ${ticket.creatorName} (${ticket.creatorEmail})\n\nPlease review and begin work on this ticket.\nRegistered Server timestamp: ${sentAt}`,
+      body: `Hello ${recipientName},\n\nA complaint ticket has been assigned to you for action.\n\nTicket ID: ${ticket.id}\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nDepartment: ${ticket.departmentName}\nPriority: ${ticket.priority}\nSLA Due: ${new Date(ticket.slaDueDate).toLocaleString()}\nRaised By: ${ticket.creatorName} (${ticket.creatorEmail})\n\nPlease review and begin work on this ticket.\nRegistered Server timestamp: ${sentAt}`,
       sentAt,
       notificationType
     };
@@ -429,7 +430,7 @@ const buildNotificationEmail = ({
       toName: recipientName,
       toEmail: recipientEmail,
       subject: `[TICKET CLOSED] ${ticket.id} - ${ticket.title}`,
-      body: `Hello ${recipientName},\n\nYour complaint ticket has been marked as closed.\n\nTicket ID: ${ticket.id}\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nDepartment: ${ticket.departmentName}\nCategory: ${ticket.categoryName}\nFinal Status: ${ticket.status}\nClosed At: ${ticket.resolvedAt ? new Date(ticket.resolvedAt).toLocaleString() : new Date(sentAt).toLocaleString()}\nAssigned To: ${ticket.assignedAgent || 'Unassigned'}${ticket.assignedAgentEmail ? ` (${ticket.assignedAgentEmail})` : ''}\n\nIf you still face the issue, please raise a new complaint or contact the support team.\nRegistered Server timestamp: ${sentAt}`,
+      body: `Hello ${recipientName},\n\nYour complaint ticket has been marked as closed.\n\nTicket ID: ${ticket.id}\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nDepartment: ${ticket.departmentName}\nFinal Status: ${ticket.status}\nClosed At: ${ticket.resolvedAt ? new Date(ticket.resolvedAt).toLocaleString() : new Date(sentAt).toLocaleString()}\nAssigned To: ${ticket.assignedAgent || 'Unassigned'}${ticket.assignedAgentEmail ? ` (${ticket.assignedAgentEmail})` : ''}\n\nIf you still face the issue, please raise a new complaint or contact support.\nRegistered Server timestamp: ${sentAt}`,
       sentAt,
       notificationType
     };
@@ -442,7 +443,7 @@ const buildNotificationEmail = ({
     toName: recipientName,
     toEmail: recipientEmail,
     subject: `[URGENT ESCALATION] ${ticket.id} SLA Limit Triggered - ${ticket.title}`,
-    body: `Attention: ${recipientName} (${recipientEmail})\n\nTicket ID: ${ticket.id} (${ticket.priority} priority) has been escalated to you due to: ${escalationType === 'Manual' ? 'manual operator escalation' : 'automatic SLA breach limits'}.\n\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nDepartment: ${ticket.departmentName}\nCategory: ${ticket.categoryName}\nSLA Due: ${new Date(ticket.slaDueDate).toLocaleString()}\nRaised By: ${ticket.creatorName} (${ticket.creatorEmail})\n\nThis complaint now needs immediate intervention from the escalation owner.\nRegistered Server timestamp: ${sentAt}`,
+    body: `Attention: ${recipientName} (${recipientEmail})\n\nTicket ID: ${ticket.id} (${ticket.priority} priority) has been escalated to you due to: ${escalationType === 'Manual' ? 'manual operator escalation' : 'automatic SLA breach limits'}.\n\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nDepartment: ${ticket.departmentName}\nSLA Due: ${new Date(ticket.slaDueDate).toLocaleString()}\nRaised By: ${ticket.creatorName} (${ticket.creatorEmail})\n\nThis complaint now needs immediate intervention from the escalation owner.\nRegistered Server timestamp: ${sentAt}`,
     sentAt,
     notificationType,
     escalationType: escalationType || 'Manual'
