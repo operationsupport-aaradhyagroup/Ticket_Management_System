@@ -6,9 +6,10 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
-import { initializeDb, dbActions, IUser, IDepartment, IComplaintCategory, ITicket, ISentEmail, IEscalationRule, IApiClient } from './serverDB';
+import { initializeDb, dbActions, IUser, IDepartment, IComplaintCategory, ITicket, ISentEmail, IEscalationRule, IApiClient, IGmailIntegrationCredential } from './serverDB';
 import { createTicket, TicketValidationError, toPublicTicket, TicketSource } from './ticketService';
 import { API_PERMISSIONS, ApiPermission, extractKeyPrefix, generateApiKey, hashApiKey, safelyMatchesApiKey, SlidingWindowRateLimiter } from './integrationSecurity';
+import { InboundEmail, processInboundEmail } from './emailTicketService';
 
 // Load environmental properties
 dotenv.config();
@@ -30,9 +31,27 @@ const API_RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.API_RATE_LIMI
 const API_RATE_LIMIT_MAX = Math.max(1, Number(process.env.API_RATE_LIMIT_MAX || 100));
 const PUBLIC_TICKET_RATE_LIMIT_MAX = Math.max(1, Number(process.env.PUBLIC_TICKET_RATE_LIMIT_MAX || 20));
 const PUBLIC_TICKET_CAPTCHA_ENABLED = process.env.PUBLIC_TICKET_CAPTCHA_ENABLED === 'true';
+const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID || '';
+const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
+const GMAIL_REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || `${APP_URL.replace(/\/$/, '')}/api/integrations/gmail/callback`;
+const GMAIL_INBOX_EMAIL = (process.env.GMAIL_INBOX_EMAIL || 'operation_support@kisansuvidha.com').toLowerCase();
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || '';
 const integrationRateLimiter = new SlidingWindowRateLimiter(API_RATE_LIMIT_WINDOW_MS, API_RATE_LIMIT_MAX);
 const publicRateLimiter = new SlidingWindowRateLimiter(API_RATE_LIMIT_WINDOW_MS, PUBLIC_TICKET_RATE_LIMIT_MAX);
+
+const gmailTokenKey = crypto.createHash('sha256').update(`${JWT_SECRET}:gmail-refresh-token`).digest();
+const encryptGmailToken = (value: string) => {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', gmailTokenKey, iv);
+  return `${iv.toString('base64url')}.${Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]).toString('base64url')}.${cipher.getAuthTag().toString('base64url')}`;
+};
+const decryptGmailToken = (value: string) => {
+  const [ivValue, encryptedValue, authTag] = value.split('.');
+  if (!ivValue || !encryptedValue || !authTag) throw new Error('GMAIL_TOKEN_INVALID');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', gmailTokenKey, Buffer.from(ivValue, 'base64url'));
+  decipher.setAuthTag(Buffer.from(authTag, 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(encryptedValue, 'base64url')), decipher.final()]).toString('utf8');
+};
 
 const sanitizeUser = (user: IUser) => ({
   email: user.email,
@@ -736,6 +755,17 @@ async function startServer() {
     }
   };
 
+  const emailTicketDependencies = {
+    getSettings: dbActions.getEmailTicketSettings,
+    findUserByEmail: dbActions.findUserByEmail,
+    reserveEvent: dbActions.reserveInboundEmailEvent,
+    updateEvent: dbActions.updateInboundEmailEvent,
+    createTicket: (input: Parameters<typeof createTicket>[0]) => createTicket(input, ticketServiceDependencies),
+    warn: (code: string, context: Record<string, unknown>) => {
+      console.warn(`[Email Ticket] ${code}`, context);
+    }
+  };
+
   const runReminderSweep = async () => {
     if (!ONESIGNAL_PUSH_ENABLED || !ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) return;
 
@@ -1305,6 +1335,121 @@ app.get('/cron', async (req, res) => {
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
+  });
+
+  // Email-to-ticket administration. Provider adapters call processInboundEmail directly;
+  // no mailbox provider endpoint is configured in this phase.
+  app.get('/api/admin/email-ticket/settings', authenticateToken, requireAdmin, async (_req, res) => {
+    try {
+      res.json({ success: true, data: await dbActions.getEmailTicketSettings() });
+    } catch {
+      res.status(500).json({ error: 'Email ticket settings could not be loaded.' });
+    }
+  });
+
+  app.put('/api/admin/email-ticket/settings', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const enabled = Boolean(req.body.enabled);
+      const subjectPrefix = String(req.body.subjectPrefix || '').trim().slice(0, 200);
+      const defaultAssigneeEmail = String(req.body.defaultAssigneeEmail || '').trim().toLowerCase().slice(0, 254);
+      if (!subjectPrefix) return void res.status(400).json({ error: 'Subject Prefix is required.' });
+      if (defaultAssigneeEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(defaultAssigneeEmail)) {
+        return void res.status(400).json({ error: 'Default Assignee Email must be a valid email address.' });
+      }
+      const settings = await dbActions.saveEmailTicketSettings({
+        id: 'email-ticket', enabled, subjectPrefix, defaultAssigneeEmail,
+        updatedAt: new Date().toISOString(), updatedBy: req.user!.email
+      });
+      res.json({ success: true, data: settings });
+    } catch {
+      res.status(500).json({ error: 'Email ticket settings could not be saved.' });
+    }
+  });
+
+  app.get('/api/admin/email-ticket/logs', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const requestedLimit = Number(req.query.limit || 100);
+      const limit = Number.isFinite(requestedLimit) ? requestedLimit : 100;
+      res.json({ success: true, data: await dbActions.listInboundEmailEvents(limit) });
+    } catch {
+      res.status(500).json({ error: 'Email ticket logs could not be loaded.' });
+    }
+  });
+
+  const gmailHeader = (payload: any, name: string) => String((payload?.headers || []).find((header: any) => String(header.name).toLowerCase() === name.toLowerCase())?.value || '');
+  const gmailBody = (part: any, mimeType: string): string => {
+    if (!part) return '';
+    if (part.mimeType === mimeType && part.body?.data) return Buffer.from(part.body.data, 'base64url').toString('utf8');
+    for (const child of part.parts || []) {
+      const value = gmailBody(child, mimeType);
+      if (value) return value;
+    }
+    return '';
+  };
+  const gmailAddresses = (value: string) => value.split(',').map((item) => item.trim()).filter(Boolean);
+  const gmailConfigReady = () => !!(GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REDIRECT_URI);
+  const refreshGmailAccessToken = async (credential: IGmailIntegrationCredential) => {
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: GMAIL_CLIENT_ID, client_secret: GMAIL_CLIENT_SECRET, refresh_token: decryptGmailToken(credential.encryptedRefreshToken), grant_type: 'refresh_token' }) });
+    const tokenData = await tokenResponse.json() as any;
+    if (!tokenResponse.ok || !tokenData.access_token) throw new Error(tokenData.error_description || 'GMAIL_TOKEN_REFRESH_FAILED');
+    return tokenData.access_token as string;
+  };
+
+  app.get('/api/admin/integrations/gmail/status', authenticateToken, requireAdmin, async (_req, res) => {
+    const credential = await dbActions.getGmailIntegrationCredential();
+    res.json({ success: true, data: { configured: gmailConfigReady(), inboxEmail: GMAIL_INBOX_EMAIL, connected: !!credential, connectedEmail: credential?.email || null, redirectUri: GMAIL_REDIRECT_URI } });
+  });
+
+  app.post('/api/admin/integrations/gmail/authorize', authenticateToken, requireAdmin, (req, res) => {
+    if (!gmailConfigReady()) return void res.status(503).json({ error: 'Gmail OAuth configuration is missing.' });
+    const state = jwt.sign({ purpose: 'gmail-oauth', userEmail: req.user!.email }, JWT_SECRET, { expiresIn: '10m' });
+    const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    url.search = new URLSearchParams({ client_id: GMAIL_CLIENT_ID, redirect_uri: GMAIL_REDIRECT_URI, response_type: 'code', access_type: 'offline', prompt: 'consent', scope: 'https://www.googleapis.com/auth/gmail.readonly', state }).toString();
+    res.json({ success: true, data: { authorizationUrl: url.toString() } });
+  });
+
+  app.get('/api/integrations/gmail/callback', async (req, res) => {
+    try {
+      const state = String(req.query.state || '');
+      const code = String(req.query.code || '');
+      const payload = jwt.verify(state, JWT_SECRET) as { purpose?: string };
+      if (payload.purpose !== 'gmail-oauth' || !code) throw new Error('GMAIL_OAUTH_INVALID_CALLBACK');
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code, client_id: GMAIL_CLIENT_ID, client_secret: GMAIL_CLIENT_SECRET, redirect_uri: GMAIL_REDIRECT_URI, grant_type: 'authorization_code' }) });
+      const tokenData = await tokenResponse.json() as any;
+      if (!tokenResponse.ok || !tokenData.refresh_token || !tokenData.access_token) throw new Error(tokenData.error_description || 'GMAIL_OAUTH_TOKEN_EXCHANGE_FAILED');
+      const profileResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers: { Authorization: `Bearer ${tokenData.access_token}` } });
+      const profile = await profileResponse.json() as any;
+      const email = String(profile.emailAddress || '').toLowerCase();
+      if (!profileResponse.ok || email !== GMAIL_INBOX_EMAIL) throw new Error(`Authorize the configured inbox: ${GMAIL_INBOX_EMAIL}`);
+      const now = new Date().toISOString();
+      await dbActions.saveGmailIntegrationCredential({ id: 'gmail', email, encryptedRefreshToken: encryptGmailToken(tokenData.refresh_token), connectedAt: now, updatedAt: now });
+      res.send('<!doctype html><title>Gmail connected</title><p>Gmail inbox connected successfully. You can close this window and return to TMS.</p>');
+    } catch (error) {
+      res.status(400).send(`<!doctype html><title>Gmail connection failed</title><p>${escapeHtml(error instanceof Error ? error.message : 'Gmail connection failed.')}</p>`);
+    }
+  });
+
+  app.post('/api/admin/integrations/gmail/sync', authenticateToken, requireAdmin, async (_req, res) => {
+    try {
+      const credential = await dbActions.getGmailIntegrationCredential();
+      if (!credential) return void res.status(409).json({ error: 'Connect the Gmail inbox before syncing.' });
+      const accessToken = await refreshGmailAccessToken(credential);
+      const listResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&q=in%3Ainbox', { headers: { Authorization: `Bearer ${accessToken}` } });
+      const listData = await listResponse.json() as any;
+      if (!listResponse.ok) throw new Error(listData.error?.message || 'GMAIL_MESSAGE_LIST_FAILED');
+      const results = { created: 0, ignored: 0, duplicates: 0, failed: 0 };
+      for (const item of listData.messages || []) {
+        const messageResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.id)}?format=full`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!messageResponse.ok) { results.failed += 1; continue; }
+        const message = await messageResponse.json() as any;
+        const result = await processInboundEmail({ messageId: gmailHeader(message.payload, 'Message-ID') || `gmail-${message.id}`, fromEmail: gmailHeader(message.payload, 'From'), fromName: '', toEmails: gmailAddresses(gmailHeader(message.payload, 'To')), originalToEmails: gmailAddresses(gmailHeader(message.payload, 'X-Original-To') || gmailHeader(message.payload, 'Delivered-To')), subject: gmailHeader(message.payload, 'Subject'), textBody: gmailBody(message.payload, 'text/plain'), htmlBody: gmailBody(message.payload, 'text/html'), receivedAt: new Date(Number(message.internalDate || Date.now())).toISOString() }, emailTicketDependencies);
+        if (result.status === 'CREATED' || result.status === 'DEFAULT_ASSIGNEE_USED') results.created += 1;
+        else if (result.status === 'IGNORED_SUBJECT') results.ignored += 1;
+        else if (result.status === 'DUPLICATE') results.duplicates += 1;
+        else if (result.status === 'FAILED') results.failed += 1;
+      }
+      res.json({ success: true, data: results });
+    } catch (error) { res.status(500).json({ error: error instanceof Error ? error.message : 'Gmail sync failed.' }); }
   });
 
   // API client management (JWT admin only)

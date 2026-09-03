@@ -74,6 +74,9 @@ export default function AdminConfigPanel({
   const [apiPermissions, setApiPermissions] = useState<string[]>(['tickets:create', 'tickets:read']);
   const [newApiKey, setNewApiKey] = useState('');
   const [apiClientStatus, setApiClientStatus] = useState('');
+  const [emailTicketSettings, setEmailTicketSettings] = useState({ enabled: false, subjectPrefix: 'Resolve this Ticket --', defaultAssigneeEmail: 'operation_support@kisansuvidha.com' });
+  const [emailTicketLogs, setEmailTicketLogs] = useState<any[]>([]);
+  const [emailTicketStatus, setEmailTicketStatus] = useState('');
   const [userForm, setUserForm] = useState<CreateUserPayload>({
     firstName: '',
     lastName: '',
@@ -109,6 +112,45 @@ export default function AdminConfigPanel({
   };
 
   useEffect(() => { void loadApiClients(); }, [token]);
+
+  const loadEmailTicketIntegration = async () => {
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const [settingsResponse, logsResponse] = await Promise.all([
+        fetch('/api/admin/email-ticket/settings', { headers }),
+        fetch('/api/admin/email-ticket/logs', { headers })
+      ]);
+      const settingsData = await settingsResponse.json();
+      const logsData = await logsResponse.json();
+      if (!settingsResponse.ok) throw new Error(settingsData.error || 'Email ticket settings could not be loaded.');
+      if (!logsResponse.ok) throw new Error(logsData.error || 'Email ticket logs could not be loaded.');
+      setEmailTicketSettings(settingsData.data);
+      setEmailTicketLogs(logsData.data || []);
+    } catch (error) {
+      setEmailTicketStatus(error instanceof Error ? error.message : 'Email ticket integration could not be loaded.');
+    }
+  };
+
+  useEffect(() => { void loadEmailTicketIntegration(); }, [token]);
+
+  const saveEmailTicketSettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setEmailTicketStatus('');
+    try {
+      const response = await fetch('/api/admin/email-ticket/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(emailTicketSettings)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Email ticket settings could not be saved.');
+      setEmailTicketSettings(data.data);
+      setEmailTicketStatus('Email ticket settings saved.');
+      await loadEmailTicketIntegration();
+    } catch (error) {
+      setEmailTicketStatus(error instanceof Error ? error.message : 'Email ticket settings could not be saved.');
+    }
+  };
 
   const createApiClient = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -199,8 +241,16 @@ export default function AdminConfigPanel({
 
   // Load categories of currently highlighted department
   const currentCategories = useMemo(() => {
-    return categories.filter(c => c.departmentId === selectedDeptId);
+    return categories
+      .filter(c => c.departmentId === selectedDeptId)
+      .sort((first, second) => first.name.localeCompare(second.name));
   }, [categories, selectedDeptId]);
+
+  const sortedDepartments = useMemo(() => (
+    [...departments].sort((first, second) => first.name.localeCompare(second.name))
+  ), [departments]);
+
+  const selectedDepartment = departments.find((department) => department.id === selectedDeptId);
 
   const inferDesignationRank = (designation: string) => {
     const normalized = designation
@@ -546,19 +596,22 @@ export default function AdminConfigPanel({
       <div className="space-y-6 md:col-span-1">
         
         <div className="bg-white p-5 rounded-[26px] border border-slate-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
-          <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div className="flex items-center space-x-2">
             <div className="rounded-2xl bg-blue-50 p-2 text-blue-600">
               <Landmark className="w-4.5 h-4.5" />
             </div>
             <div>
-              <h3 className="font-bold text-gray-800 text-sm">Complaint Departments</h3>
-              <p className="text-[11px] text-gray-400">Create and manage routing departments.</p>
+              <h3 className="font-bold text-gray-800 text-sm">1. Select Department</h3>
+              <p className="text-[11px] text-gray-400">Choose where its SLA rules will apply.</p>
             </div>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{departments.length}</span>
           </div>
 
         {/* Create Department Form */}
         <form onSubmit={handleCreateDept} className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
-          <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Create Custom Department</label>
+          <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Add Department</label>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
               id="input-new-dept-name"
@@ -580,8 +633,8 @@ export default function AdminConfigPanel({
         </form>
 
         {/* Departments List */}
-        <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
-          {departments.map(d => {
+        <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
+          {sortedDepartments.map(d => {
             const isSelected = d.id === selectedDeptId;
             return (
               <div
@@ -594,11 +647,12 @@ export default function AdminConfigPanel({
                     : 'bg-white border-transparent text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                <span className="break-words">{d.name} {d.isCustom && <span className="text-[9px] bg-amber-50 text-amber-600 border border-amber-100 px-1 rounded-sm ml-1">Custom</span>}</span>
+                <div className="min-w-0">
+                  <span className="block break-words">{d.name}</span>
+                  <span className="mt-0.5 block text-[10px] font-normal text-gray-400">{categories.filter(c => c.departmentId === d.id).length} SLA {categories.filter(c => c.departmentId === d.id).length === 1 ? 'rule' : 'rules'}{d.isCustom ? ' · Custom' : ''}</span>
+                </div>
                 <div className="flex items-center space-x-2 shrink-0">
-                  <span className="text-[10px] text-gray-400">
-                    {categories.filter(c => c.departmentId === d.id).length} cats
-                  </span>
+                  {isSelected && <span className="rounded-full bg-blue-600 px-2 py-1 text-[9px] font-bold text-white">Selected</span>}
                   {d.isCustom && onDeleteDepartment && (
                     <button
                       type="button"
@@ -1039,6 +1093,7 @@ export default function AdminConfigPanel({
         </form>
       </div>
 
+      {false && <>
       <div className="order-3 bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 border-b border-gray-50 pb-3">
           <div className="rounded-2xl bg-indigo-50 p-2 text-indigo-600"><KeyRound className="h-4.5 w-4.5" /></div>
@@ -1095,6 +1150,27 @@ export default function AdminConfigPanel({
         </div>
       </div>
 
+      <div className="order-3 bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+        <div className="flex items-center space-x-3 border-b border-gray-50 pb-3">
+          <div className="rounded-2xl bg-sky-50 p-2 text-sky-600"><Mail className="h-4.5 w-4.5" /></div>
+          <div>
+            <h3 className="text-sm font-bold text-gray-800">Email Ticket Integration</h3>
+            <p className="text-[11px] text-gray-400">Configure provider-independent inbound email ticket creation.</p>
+          </div>
+        </div>
+        {emailTicketStatus && <div className="rounded-xl border border-sky-100 bg-sky-50 p-3 text-xs text-sky-800">{emailTicketStatus}</div>}
+        <form onSubmit={saveEmailTicketSettings} className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={emailTicketSettings.enabled} onChange={(e) => setEmailTicketSettings(current => ({ ...current, enabled: e.target.checked }))} /> Enable Email Ticket Creation</label>
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Subject Prefix<input required value={emailTicketSettings.subjectPrefix} onChange={(e) => setEmailTicketSettings(current => ({ ...current, subjectPrefix: e.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-normal normal-case tracking-normal" /></label>
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Default Assignee Email<input type="email" value={emailTicketSettings.defaultAssigneeEmail} onChange={(e) => setEmailTicketSettings(current => ({ ...current, defaultAssigneeEmail: e.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-normal normal-case tracking-normal" /></label>
+          <button type="submit" className="rounded-xl bg-sky-600 px-4 py-2.5 text-xs font-bold text-white">Save Email Settings</button>
+        </form>
+        <div className="overflow-x-auto rounded-2xl border border-slate-100">
+          <table className="min-w-full text-left text-[10px] text-slate-600"><thead className="bg-slate-50 uppercase tracking-wider text-slate-400"><tr><th className="p-2">Received</th><th className="p-2">From</th><th className="p-2">To</th><th className="p-2">Subject</th><th className="p-2">Status</th><th className="p-2">Assigned</th><th className="p-2">Ticket ID</th><th className="p-2">Error</th></tr></thead><tbody>{emailTicketLogs.length === 0 ? <tr><td colSpan={8} className="p-3 text-center text-slate-400">No inbound email events.</td></tr> : emailTicketLogs.map(log => <tr key={log.messageId} className="border-t border-slate-100 align-top"><td className="p-2 whitespace-nowrap">{formatApiDateTime(log.receivedAt)}</td><td className="p-2">{log.fromEmail}</td><td className="p-2">{(log.originalToEmails?.length ? log.originalToEmails : log.toEmails || []).join(', ')}</td><td className="p-2">{log.subject}</td><td className="p-2 font-semibold">{log.status}</td><td className="p-2">{log.assignedAgentEmail || 'Unassigned'}</td><td className="p-2">{log.ticketId || '—'}</td><td className="p-2 text-rose-600">{log.errorMessage || log.errorCode || '—'}</td></tr>)}</tbody></table>
+        </div>
+      </div>
+
+      </>}
       <div className="order-4 grid grid-cols-1 xl:grid-cols-1 gap-6">
       <div className="bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
@@ -1215,9 +1291,9 @@ export default function AdminConfigPanel({
         <div className="pb-4 border-b border-gray-100 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
           <div className="space-y-0.5 min-w-0">
             <h3 className="font-bold text-gray-800 text-sm">
-              SLA Category Rules: {departments.find(d => d.id === selectedDeptId)?.name || 'Select Department'}
+              2. Configure SLA Rules: {selectedDepartment?.name || 'Select Department'}
             </h3>
-            <p className="text-xs text-gray-400">Define default response windows and severity expectations for complaint categories.</p>
+            <p className="text-xs text-gray-400">Each category receives one default priority and response window.</p>
           </div>
           <div className="flex items-center space-x-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-full w-fit">
             <ShieldCheck className="w-3.5 h-3.5" />
@@ -1232,7 +1308,7 @@ export default function AdminConfigPanel({
               <span className="rounded-xl bg-white p-2 text-blue-600 shadow-sm">
                 <FolderPlus className="w-4 h-4" />
               </span>
-              <span>Create Complaint Category with Default SLA</span>
+              <span>Add a category rule for {selectedDepartment?.name}</span>
             </h4>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -1313,41 +1389,39 @@ export default function AdminConfigPanel({
 
         {/* Category List */}
         <div className="flex-1 space-y-2 mt-2">
-          <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-            Existing Dynamic SLA Mappings ({currentCategories.length})
-          </span>
+          <div className="flex items-center justify-between gap-3">
+            <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">3. Review Active SLA Rules</span>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{currentCategories.length} total</span>
+          </div>
           {currentCategories.length === 0 ? (
             <div className="text-center py-8 text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl">
               No categories configured for this department yet. Standard tickets require at least one category mapping.
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[320px] sm:max-h-[220px] overflow-y-auto pr-1">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="min-w-full text-left text-xs">
+                <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-400">
+                  <tr><th className="px-4 py-3">Category</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Response SLA</th><th className="px-4 py-3 text-right">Action</th></tr>
+                </thead>
+                <tbody>
               {currentCategories.map(c => (
-                <div
+                <tr
                   key={c.id}
                   id={`cat-card-${c.id}`}
-                  className="flex items-start justify-between gap-3 p-3.5 rounded-2xl border border-slate-200 hover:border-blue-200 bg-[linear-gradient(135deg,#ffffff,#f8fbff)] hover:bg-white transition-all duration-200 shadow-sm"
+                  className="border-t border-slate-100 transition-colors hover:bg-blue-50/40"
                 >
-                    <div className="space-y-1 min-w-0">
-                    <p className="font-semibold text-gray-700 text-xs break-words">{c.name}</p>
-                    <div className="flex items-center space-x-2 text-[10px] text-gray-400 flex-wrap gap-y-1">
-                      <div className="flex items-center space-x-1">
-                        <Clock className="w-3 h-3 text-gray-400" />
-                        <span>SLA: {c.defaultSlaValue} {c.defaultSlaUnit}</span>
-                      </div>
-                      <span className="text-gray-300">•</span>
-                      <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${
+                  <td className="px-4 py-3 font-semibold text-slate-700">{c.name}</td>
+                  <td className="px-4 py-3"><span className={`inline-flex rounded-md border px-2 py-1 text-[10px] font-bold ${
                         c.defaultPriority === 'Critical' ? 'bg-rose-50 text-rose-700 border-rose-100' :
                         c.defaultPriority === 'High' ? 'bg-amber-50 text-amber-700 border-amber-100' :
                         c.defaultPriority === 'Low' ? 'bg-gray-50 text-gray-600 border-gray-100' :
                         'bg-blue-50 text-blue-700 border-blue-105'
                       }`}>
                         {c.defaultPriority || 'Medium'}
-                      </span>
-                    </div>
-                  </div>
+                      </span></td>
+                  <td className="px-4 py-3 text-slate-600"><span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-slate-400" />{c.defaultSlaValue} {c.defaultSlaUnit}</span></td>
 
-                  {onDeleteCategory && (
+                  <td className="px-4 py-3 text-right">{onDeleteCategory && (
                     <button
                       type="button"
                       id={`btn-del-cat-${c.id}`}
@@ -1361,9 +1435,11 @@ export default function AdminConfigPanel({
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
-                  )}
-                </div>
+                  )}</td>
+                </tr>
               ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

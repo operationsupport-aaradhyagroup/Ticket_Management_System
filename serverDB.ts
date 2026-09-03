@@ -175,6 +175,41 @@ export interface IApiAuditEvent {
   metadata?: Record<string, unknown>;
 }
 
+export interface IEmailTicketSettings {
+  id: 'email-ticket';
+  enabled: boolean;
+  subjectPrefix: string;
+  defaultAssigneeEmail: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface IGmailIntegrationCredential {
+  id: 'gmail';
+  email: string;
+  encryptedRefreshToken: string;
+  connectedAt: string;
+  updatedAt: string;
+}
+
+export type InboundEmailStatus = 'PROCESSING' | 'CREATED' | 'IGNORED_SUBJECT' | 'DUPLICATE' | 'FAILED' | 'DEFAULT_ASSIGNEE_USED';
+
+export interface IInboundEmailEvent {
+  messageId: string;
+  fromEmail: string;
+  toEmails: string[];
+  originalToEmails?: string[];
+  subject: string;
+  status: InboundEmailStatus;
+  ticketId: string;
+  assignedAgentEmail: string;
+  errorCode: string;
+  errorMessage: string;
+  receivedAt: string;
+  processedAt: string;
+  createdAt: string;
+}
+
 // Memory Cache fallback store for disk DB mode
 interface IDiskStore {
   users: IUser[];
@@ -185,6 +220,9 @@ interface IDiskStore {
   apiClients?: IApiClient[];
   idempotencyRecords?: IIdempotencyRecord[];
   apiAuditEvents?: IApiAuditEvent[];
+  emailTicketSettings?: IEmailTicketSettings;
+  inboundEmailEvents?: IInboundEmailEvent[];
+  gmailIntegrationCredential?: IGmailIntegrationCredential;
 }
 
 let diskDb: IDiskStore = {
@@ -202,8 +240,12 @@ let isMongoConnected = false;
 // Register schemas for Mongoose if it's active
 let UserSchema: any, DeptSchema: any, CatSchema: any, TicketSchema: any, EmailSchema: any;
 let EscalationRuleSchema: any, ApiClientSchema: any, IdempotencySchema: any, ApiAuditSchema: any;
+let EmailTicketSettingsSchema: any, InboundEmailEventSchema: any;
+let GmailIntegrationCredentialSchema: any;
 let UserModel: any, DeptModel: any, CatModel: any, TicketModel: any, EmailModel: any, EscalationRuleModel: any;
 let ApiClientModel: any, IdempotencyModel: any, ApiAuditModel: any;
+let EmailTicketSettingsModel: any, InboundEmailEventModel: any;
+let GmailIntegrationCredentialModel: any;
 
 if (useMongo) {
   try {
@@ -344,6 +386,36 @@ if (useMongo) {
       createdAt: { type: String, required: true },
       metadata: { type: Schema.Types.Mixed, default: undefined }
     });
+    EmailTicketSettingsSchema = new Schema({
+      id: { type: String, unique: true, required: true, default: 'email-ticket' },
+      enabled: { type: Boolean, default: false },
+      subjectPrefix: { type: String, required: true, default: 'Resolve this Ticket --' },
+      defaultAssigneeEmail: { type: String, required: true, default: 'operation_support@kisansuvidha.com' },
+      updatedAt: { type: String, required: true },
+      updatedBy: { type: String, required: true }
+    });
+    InboundEmailEventSchema = new Schema({
+      messageId: { type: String, unique: true, required: true, index: true },
+      fromEmail: { type: String, required: true },
+      toEmails: [{ type: String }],
+      originalToEmails: [{ type: String }],
+      subject: { type: String, default: '' },
+      status: { type: String, enum: ['PROCESSING', 'CREATED', 'IGNORED_SUBJECT', 'DUPLICATE', 'FAILED', 'DEFAULT_ASSIGNEE_USED'], required: true, index: true },
+      ticketId: { type: String, default: '', index: true },
+      assignedAgentEmail: { type: String, default: '' },
+      errorCode: { type: String, default: '' },
+      errorMessage: { type: String, default: '' },
+      receivedAt: { type: String, required: true, index: true },
+      processedAt: { type: String, default: '' },
+      createdAt: { type: String, required: true }
+    });
+    GmailIntegrationCredentialSchema = new Schema({
+      id: { type: String, unique: true, required: true, default: 'gmail' },
+      email: { type: String, required: true },
+      encryptedRefreshToken: { type: String, required: true, select: false },
+      connectedAt: { type: String, required: true },
+      updatedAt: { type: String, required: true }
+    });
 
     UserModel = mongoose.models.User || mongoose.model('User', UserSchema);
     DeptModel = mongoose.models.Department || mongoose.model('Department', DeptSchema);
@@ -354,6 +426,9 @@ if (useMongo) {
     ApiClientModel = mongoose.models.ApiClient || mongoose.model('ApiClient', ApiClientSchema);
     IdempotencyModel = mongoose.models.TicketIdempotency || mongoose.model('TicketIdempotency', IdempotencySchema);
     ApiAuditModel = mongoose.models.ApiAuditEvent || mongoose.model('ApiAuditEvent', ApiAuditSchema);
+    EmailTicketSettingsModel = mongoose.models.EmailTicketSettings || mongoose.model('EmailTicketSettings', EmailTicketSettingsSchema);
+    InboundEmailEventModel = mongoose.models.InboundEmailEvent || mongoose.model('InboundEmailEvent', InboundEmailEventSchema);
+    GmailIntegrationCredentialModel = mongoose.models.GmailIntegrationCredential || mongoose.model('GmailIntegrationCredential', GmailIntegrationCredentialSchema);
   } catch (err) {
     console.warn('Mongoose Schemas failed to prepare: ', err);
   }
@@ -446,9 +521,23 @@ function loadFromDisk() {
       if (!diskDb.apiClients) diskDb.apiClients = [];
       if (!diskDb.idempotencyRecords) diskDb.idempotencyRecords = [];
       if (!diskDb.apiAuditEvents) diskDb.apiAuditEvents = [];
+      if (!diskDb.inboundEmailEvents) diskDb.inboundEmailEvents = [];
+      if (!diskDb.emailTicketSettings) {
+        diskDb.emailTicketSettings = {
+          id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
+          defaultAssigneeEmail: 'operation_support@kisansuvidha.com', updatedAt: '', updatedBy: 'system'
+        };
+      }
     } else {
       // Seed default mock structure
-      diskDb = { users: [], departments: [], categories: [], tickets: [], emails: [], apiClients: [], idempotencyRecords: [], apiAuditEvents: [] };
+      diskDb = {
+        users: [], departments: [], categories: [], tickets: [], emails: [], apiClients: [], idempotencyRecords: [], apiAuditEvents: [],
+        inboundEmailEvents: [],
+        emailTicketSettings: {
+          id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
+          defaultAssigneeEmail: 'operation_support@kisansuvidha.com', updatedAt: '', updatedBy: 'system'
+        }
+      };
       saveToDisk();
     }
   } catch (error) {
@@ -1299,6 +1388,81 @@ export const dbActions = {
     diskDb.apiAuditEvents.push(event);
     saveToDisk();
     return event;
+  },
+
+  getEmailTicketSettings: async (): Promise<IEmailTicketSettings> => {
+    const defaults: IEmailTicketSettings = {
+      id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
+      defaultAssigneeEmail: 'operation_support@kisansuvidha.com', updatedAt: '', updatedBy: 'system'
+    };
+    if (isMongoConnected) {
+      const settings = await EmailTicketSettingsModel.findOne({ id: 'email-ticket' }).lean();
+      return settings ? { ...defaults, ...settings } : defaults;
+    }
+    return { ...defaults, ...(diskDb.emailTicketSettings || {}) };
+  },
+  saveEmailTicketSettings: async (settings: IEmailTicketSettings): Promise<IEmailTicketSettings> => {
+    const normalized = {
+      ...settings,
+      id: 'email-ticket' as const,
+      subjectPrefix: settings.subjectPrefix.trim(),
+      defaultAssigneeEmail: settings.defaultAssigneeEmail.toLowerCase().trim()
+    };
+    if (isMongoConnected) {
+      return await EmailTicketSettingsModel.findOneAndUpdate(
+        { id: 'email-ticket' }, { $set: normalized }, { new: true, upsert: true, setDefaultsOnInsert: true }
+      ).lean();
+    }
+    diskDb.emailTicketSettings = normalized;
+    saveToDisk();
+    return normalized;
+  },
+  reserveInboundEmailEvent: async (event: IInboundEmailEvent): Promise<IInboundEmailEvent> => {
+    const normalized = { ...event, messageId: event.messageId.toLowerCase().trim() };
+    if (isMongoConnected) return (await InboundEmailEventModel.create(normalized)).toObject();
+    diskDb.inboundEmailEvents = diskDb.inboundEmailEvents || [];
+    if (diskDb.inboundEmailEvents.some(item => item.messageId === normalized.messageId)) {
+      throw new Error('INBOUND_EMAIL_DUPLICATE');
+    }
+    diskDb.inboundEmailEvents.unshift(normalized);
+    saveToDisk();
+    return normalized;
+  },
+  updateInboundEmailEvent: async (messageId: string, updates: Partial<IInboundEmailEvent>): Promise<IInboundEmailEvent | null> => {
+    const normalizedId = messageId.toLowerCase().trim();
+    if (isMongoConnected) return await InboundEmailEventModel.findOneAndUpdate(
+      { messageId: normalizedId }, { $set: updates }, { new: true }
+    ).lean();
+    diskDb.inboundEmailEvents = diskDb.inboundEmailEvents || [];
+    const index = diskDb.inboundEmailEvents.findIndex(item => item.messageId === normalizedId);
+    if (index === -1) return null;
+    diskDb.inboundEmailEvents[index] = { ...diskDb.inboundEmailEvents[index], ...updates };
+    saveToDisk();
+    return diskDb.inboundEmailEvents[index];
+  },
+  listInboundEmailEvents: async (limit = 100): Promise<IInboundEmailEvent[]> => {
+    const safeLimit = Math.min(500, Math.max(1, limit));
+    if (isMongoConnected) return await InboundEmailEventModel.find({}).sort({ receivedAt: -1 }).limit(safeLimit).lean();
+    return [...(diskDb.inboundEmailEvents || [])]
+      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
+      .slice(0, safeLimit);
+  },
+  getGmailIntegrationCredential: async (): Promise<IGmailIntegrationCredential | null> => {
+    if (isMongoConnected) return await GmailIntegrationCredentialModel.findOne({ id: 'gmail' }).select('+encryptedRefreshToken').lean();
+    return diskDb.gmailIntegrationCredential || null;
+  },
+  saveGmailIntegrationCredential: async (credential: IGmailIntegrationCredential): Promise<IGmailIntegrationCredential> => {
+    if (isMongoConnected) return await GmailIntegrationCredentialModel.findOneAndUpdate(
+      { id: 'gmail' }, { $set: credential }, { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).select('+encryptedRefreshToken').lean();
+    diskDb.gmailIntegrationCredential = credential;
+    saveToDisk();
+    return credential;
+  },
+  deleteGmailIntegrationCredential: async (): Promise<void> => {
+    if (isMongoConnected) { await GmailIntegrationCredentialModel.deleteOne({ id: 'gmail' }); return; }
+    delete diskDb.gmailIntegrationCredential;
+    saveToDisk();
   },
 
   // --- ESCALATION RULES SECTION ---
