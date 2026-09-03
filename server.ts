@@ -1985,8 +1985,6 @@ app.get('/cron', async (req, res) => {
 
       const departments = await dbActions.getDepartments();
       const dept = departments.find(d => d.id === ticket.departmentId);
-      const headName = dept && dept.headName ? dept.headName : 'Unassigned Head';
-      const headEmail = dept && dept.headEmail ? dept.headEmail : 'unassigned@company.com';
       const escalationRules = await dbActions.getEscalationRules();
       const departmentRule = escalationRules.find((rule) => rule.departmentId === ticket.departmentId);
 
@@ -2029,16 +2027,44 @@ app.get('/cron', async (req, res) => {
         }
       }
 
+      const reportingManager = currentEscalationUser?.reportingManagerEmail
+        ? users.find((user) => user.email.toLowerCase() === currentEscalationUser.reportingManagerEmail?.toLowerCase())
+        : null;
+      const reportingManagerRecipient = reportingManager && !isSameUserTarget(
+        currentEscalationUser?.name,
+        currentEscalationUser?.email,
+        reportingManager.name,
+        reportingManager.email
+      )
+        ? {
+            name: reportingManager.name,
+            email: reportingManager.email,
+            label: 'Reporting Manager Fallback'
+          }
+        : null;
+
+      const departmentHead = dept?.headEmail
+        ? users.find((user) => user.email.toLowerCase() === dept.headEmail?.toLowerCase())
+        : null;
+      const departmentHeadRecipient = departmentHead
+        ? {
+            name: departmentHead.name,
+            email: departmentHead.email,
+            label: departmentRule ? 'Department Head Fallback' : 'Department Head'
+          }
+        : null;
+
       const escalationRecipient =
         ladderRecipient
           ? ladderRecipient
-          : {
-              name: headName,
-              email: headEmail,
-              label: departmentRule
-                ? 'Department Head Fallback'
-                : 'Department Head'
-            };
+          : reportingManagerRecipient || departmentHeadRecipient;
+
+      if (!escalationRecipient) {
+        res.status(400).json({
+          error: 'No eligible escalation target is configured. Add a ladder user, reporting manager, or active department head.'
+        });
+        return;
+      }
 
       if (
         isSameUserTarget(
