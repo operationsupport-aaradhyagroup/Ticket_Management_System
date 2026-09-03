@@ -884,22 +884,24 @@ export default function App() {
           </div>
 
           <div className="flex items-center justify-between sm:justify-end space-x-4">
-            <div
-              className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold ${
-                dbType === 'MongoDB' && !apiError
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                  : 'border-rose-200 bg-rose-50 text-rose-700'
-              }`}
-              title={dbType === 'MongoDB' && !apiError ? 'MongoDB connected' : 'MongoDB not connected'}
-              role="status"
-            >
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${
-                  dbType === 'MongoDB' && !apiError ? 'bg-emerald-500' : 'bg-rose-500'
+            {currentUser?.role === 'Admin' && (
+              <div
+                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold ${
+                  dbType === 'MongoDB' && !apiError
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-rose-200 bg-rose-50 text-rose-700'
                 }`}
-              />
-              <span>{dbType === 'MongoDB' && !apiError ? 'MongoDB Connected' : 'MongoDB Not Connected'}</span>
-            </div>
+                title={dbType === 'MongoDB' && !apiError ? 'MongoDB connected' : 'MongoDB not connected'}
+                role="status"
+              >
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    dbType === 'MongoDB' && !apiError ? 'bg-emerald-500' : 'bg-rose-500'
+                  }`}
+                />
+                <span>{dbType === 'MongoDB' && !apiError ? 'MongoDB Connected' : 'MongoDB Not Connected'}</span>
+              </div>
+            )}
 
             <button
               onClick={fetchDbData}
