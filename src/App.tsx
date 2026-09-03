@@ -9,7 +9,6 @@ import TicketList from './components/TicketList';
 import CreateTicketModal from './components/CreateTicketModal';
 import TicketDetailView from './components/TicketDetailView';
 import AdminConfigPanel from './components/AdminConfigPanel';
-import IntegrationApiPanel from './components/IntegrationApiPanel';
 import UserProfileModal from './components/UserProfileModal';
 
 // Icons
@@ -19,7 +18,6 @@ import {
   LayoutDashboard,
   Ticket as TicketIcon,
   Settings,
-  Plug,
   HelpCircle,
   TrendingUp,
   Plus,
@@ -65,7 +63,7 @@ export default function App() {
   const [apiError, setApiError] = useState<string | null>(null);
 
   // Active UI Navigation tabs: 'all' | 'raised' | 'assigned' | 'dashboard' | 'config'
-  const [activeTab, setActiveTab] = useState<'all' | 'raised' | 'assigned' | 'breached' | 'dashboard' | 'config' | 'integrations'>('raised');
+  const [activeTab, setActiveTab] = useState<'all' | 'raised' | 'assigned' | 'breached' | 'dashboard' | 'config'>('raised');
   
   // Selected ticket for detailed view
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
@@ -779,13 +777,6 @@ export default function App() {
               </button>
             )}
 
-            {currentUser?.role === 'Admin' && (
-              <button id="tab-btn-integrations" onClick={() => { setActiveTab('integrations'); setSelectedTicketId(null); }} className={`px-3 h-full flex items-center space-x-2 text-xs font-bold border-b-2 transition-all shrink-0 ${activeTab === 'integrations' ? 'border-blue-600 text-blue-600 font-extrabold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
-                <Plug className="w-4 h-4 text-indigo-500" />
-                <span>Integration & API</span>
-              </button>
-            )}
-
             {/* 2. My Raised Complaints (Available to Non-Admins only) */}
             {currentUser?.role !== 'Admin' && (
               <button
@@ -994,7 +985,6 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'integrations' && currentUser?.role === 'Admin' && <IntegrationApiPanel token={token!} />}
           </div>
         )}
 

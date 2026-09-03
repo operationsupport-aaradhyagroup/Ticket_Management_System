@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ComplaintCategory, CreateUserPayload, Department, EscalationRule, SLAUnit, TicketPriority, UserSession } from '../types';
 import { Landmark, Plus, Trash2, ShieldCheck, FolderPlus, Clock, AlertCircle, Database, RefreshCw, KeyRound, Search, UserPlus, Building2, Briefcase, Mail, IdCard, GitBranch } from 'lucide-react';
+import IntegrationApiPanel from './IntegrationApiPanel';
 
 interface AdminConfigPanelProps {
   token: string;
@@ -212,7 +213,7 @@ export default function AdminConfigPanel({
     type: 'success' | 'error';
     message: string;
   } | null>(null);
-  const [activeSettingsSection, setActiveSettingsSection] = useState<'organization' | 'employees' | 'escalation' | 'system'>('organization');
+  const [activeSettingsSection, setActiveSettingsSection] = useState<'organization' | 'employees' | 'escalation' | 'integrations' | 'system'>('organization');
 
   const handleMigrate = async () => {
     setMigrating(true);
@@ -605,10 +606,13 @@ export default function AdminConfigPanel({
         .settings-shell[data-active-section='organization'] .settings-section:not([data-settings-section='organization']),
         .settings-shell[data-active-section='employees'] .settings-section:not([data-settings-section='employees']),
         .settings-shell[data-active-section='escalation'] .settings-section:not([data-settings-section='escalation']),
+        .settings-shell[data-active-section='integrations'] .settings-section:not([data-settings-section='integrations']),
         .settings-shell[data-active-section='system'] .settings-section:not([data-settings-section='system']) { display: none; }
         @media (min-width: 768px) {
           .settings-shell[data-active-section='escalation'] .settings-left-column { display: none; }
           .settings-shell[data-active-section='escalation'] .settings-right-column { grid-column: 1 / -1; }
+          .settings-shell[data-active-section='integrations'] .settings-left-column,
+          .settings-shell[data-active-section='integrations'] .settings-right-column { display: none; }
           .settings-shell[data-active-section='system'] .settings-left-column { grid-column: 1 / -1; }
         }
       `}</style>
@@ -623,6 +627,7 @@ export default function AdminConfigPanel({
             { id: 'organization', label: 'Organization & SLA', description: 'Departments and SLA rules', icon: Landmark },
             { id: 'employees', label: 'Employees', description: 'Accounts and password reset', icon: UserPlus },
             { id: 'escalation', label: 'Escalation', description: 'Designation routing ladder', icon: GitBranch },
+            { id: 'integrations', label: 'Integration & API', description: 'Email and developer access', icon: KeyRound },
             { id: 'system', label: 'System Controls', description: 'Ticket maintenance tools', icon: Database }
           ].map(({ id, label, description, icon: Icon }) => {
             const isActive = activeSettingsSection === id;
@@ -638,10 +643,10 @@ export default function AdminConfigPanel({
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">Settings &amp; Management</p>
           <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <h3 className="text-xl font-black text-slate-900">
-              {activeSettingsSection === 'organization' ? 'Organization & SLA' : activeSettingsSection === 'employees' ? 'Employee Management' : activeSettingsSection === 'escalation' ? 'Escalation Workflow' : 'System Controls'}
+              {activeSettingsSection === 'organization' ? 'Organization & SLA' : activeSettingsSection === 'employees' ? 'Employee Management' : activeSettingsSection === 'escalation' ? 'Escalation Workflow' : activeSettingsSection === 'integrations' ? 'Integration & API' : 'System Controls'}
             </h3>
             <p className="text-xs text-slate-500">
-              {activeSettingsSection === 'organization' ? 'Manage departments and response rules.' : activeSettingsSection === 'employees' ? 'Manage employee accounts and access.' : activeSettingsSection === 'escalation' ? 'Configure designation-based routing.' : 'Run controlled ticket maintenance actions.'}
+              {activeSettingsSection === 'organization' ? 'Manage departments and response rules.' : activeSettingsSection === 'employees' ? 'Manage employee accounts and access.' : activeSettingsSection === 'escalation' ? 'Configure designation-based routing.' : activeSettingsSection === 'integrations' ? 'Configure email sync and developer credentials.' : 'Run controlled ticket maintenance actions.'}
             </p>
           </div>
         </div>
@@ -1530,6 +1535,9 @@ export default function AdminConfigPanel({
       </div>
 
     </div>
+      <div data-settings-section="integrations" className="settings-section md:col-span-3">
+        <IntegrationApiPanel token={token} />
+      </div>
       </div>
     </div>
   );
