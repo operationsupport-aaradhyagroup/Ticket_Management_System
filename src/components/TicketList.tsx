@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Ticket, Department, ComplaintCategory, TicketStatus, SLAStatus, TicketPriority } from '../types';
-import { formatSLACountdown, computeSLAStatus } from '../utils';
+import { formatSLACountdown, computeSLAStatus, formatDateTime } from '../utils';
 import { Search, Filter, RefreshCw, AlertCircle, Clock, CheckCircle2, User, Play, ChevronRight } from 'lucide-react';
 
 interface TicketListProps {
@@ -328,7 +328,7 @@ export default function TicketList({
                     </span>
                   </div>
                   <div className="text-[10px] text-gray-400">
-                    Due: {new Date(t.slaDueDate).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} ({t.slaDurationValue} {t.slaDurationUnit} {t.slaType.toLowerCase()})
+                    Due: {formatDateTime(t.slaDueDate)} ({t.slaDurationValue} {t.slaDurationUnit} {t.slaType.toLowerCase()})
                   </div>
                 </div>
               </button>
@@ -436,7 +436,7 @@ export default function TicketList({
                         </div>
                         
                         <div className="text-[10px] text-gray-400" title="SLA Deadline">
-                          Due: {new Date(t.slaDueDate).toLocaleTimeString(undefined, {hour: '2-digit', minute:'2-digit'})} ({t.slaDurationValue} {t.slaDurationUnit} {t.slaType.toLowerCase()})
+                          Due: {formatDateTime(t.slaDueDate)} ({t.slaDurationValue} {t.slaDurationUnit} {t.slaType.toLowerCase()})
                         </div>
                       </div>
                     </td>
@@ -463,9 +463,8 @@ export default function TicketList({
       </div>
 
       {/* Ticket List Footer metadata */}
-      <div className="p-3 bg-gray-50/75 border-t border-gray-50 text-xs text-gray-400 flex flex-col sm:flex-row justify-between items-center gap-1 px-4 sm:px-5 font-mono text-center sm:text-left">
-        <span>Showing {filteredTickets.length} of {tickets.length} complaints</span>
-        <span>Standard Clock synchronized with 2026-05-26 UTC</span>
+      <div className="p-3 bg-gray-50/75 border-t border-gray-50 text-xs text-gray-400 flex items-center px-4 sm:px-5 font-mono">
+        <span>Total Count: {filteredTickets.length}</span>
       </div>
     </div>
   );

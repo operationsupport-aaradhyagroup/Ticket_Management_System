@@ -28,6 +28,15 @@ export interface SentEmail {
   escalationType?: 'Manual' | 'Auto-SLA-Breach';
 }
 
+export interface EscalationRule {
+  id: string;
+  departmentId: string;
+  departmentName: string;
+  designationLevels: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ComplaintCategory {
   id: string;
   departmentId: string;
@@ -80,6 +89,31 @@ export interface Ticket {
   isEscalated?: boolean;
   lastReminderSentAt?: string | null;
   reminderCount?: number;
+}
+
+export interface CreateTicketPayload {
+  title: string;
+  description: string;
+  dueDate: string;
+  priority: TicketPriority;
+  assignedAgent: string;
+  assignedAgentEmail?: string;
+  departmentId?: string;
+  departmentName?: string;
+}
+
+export interface CreateUserPayload {
+  firstName: string;
+  lastName: string;
+  email: string;
+  employeeId: string;
+  departmentId: string;
+  designation: string;
+  reportingManager: string;
+  reportingManagerEmail: string;
+  company?: string;
+  role?: 'User' | 'Admin';
+  password?: string;
 }
 
 export interface UserSession {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Department, ComplaintCategory, Ticket, UserSession, SLAUnit, TicketStatus, SLAStatus, TicketPriority, SentEmail } from './types';
+import { ComplaintCategory, CreateTicketPayload, CreateUserPayload, Department, EscalationRule, SentEmail, SLAStatus, SLAUnit, Ticket, TicketPriority, TicketStatus, UserSession } from './types';
 import { computeSLAStatus, isTicketAssignedToUser, isTicketRaisedByUser, wasTicketHistoricallyAssignedToUser } from './utils';
 
 // Import our custom modules
@@ -9,23 +9,21 @@ import TicketList from './components/TicketList';
 import CreateTicketModal from './components/CreateTicketModal';
 import TicketDetailView from './components/TicketDetailView';
 import AdminConfigPanel from './components/AdminConfigPanel';
+import IntegrationApiPanel from './components/IntegrationApiPanel';
 import UserProfileModal from './components/UserProfileModal';
 
 // Icons
 import {
   ShieldCheck,
   User,
-  Clock,
   LayoutDashboard,
   Ticket as TicketIcon,
   Settings,
+  Plug,
   HelpCircle,
   TrendingUp,
-  FastForward,
-  RotateCcw,
   Plus,
   LogOut,
-  Database,
   RefreshCw,
   AlertCircle
 } from 'lucide-react';
@@ -34,6 +32,11 @@ declare global {
   interface Window {
     OneSignalDeferred?: Array<(oneSignal: any) => void>;
   }
+}
+
+interface EmployeeOptions {
+  companies: string[];
+  designationsByDepartmentId: Record<string, string[]>;
 }
 
 export default function App() {
@@ -47,7 +50,12 @@ export default function App() {
   const [categories, setCategories] = useState<ComplaintCategory[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [companyUsers, setCompanyUsers] = useState<UserSession[]>([]);
+  const [employeeOptions, setEmployeeOptions] = useState<EmployeeOptions>({
+    companies: ['Aaradhya Group'],
+    designationsByDepartmentId: {}
+  });
   const [sentEmails, setSentEmails] = useState<SentEmail[]>([]);
+  const [escalationRules, setEscalationRules] = useState<EscalationRule[]>([]);
   
   // App states
   const [dbType, setDbType] = useState<string>('Detecting...');
@@ -55,7 +63,7 @@ export default function App() {
   const [apiError, setApiError] = useState<string | null>(null);
 
   // Active UI Navigation tabs: 'all' | 'raised' | 'assigned' | 'dashboard' | 'config'
-  const [activeTab, setActiveTab] = useState<'all' | 'raised' | 'assigned' | 'breached' | 'dashboard' | 'config'>('raised');
+  const [activeTab, setActiveTab] = useState<'all' | 'raised' | 'assigned' | 'breached' | 'dashboard' | 'config' | 'integrations'>('raised');
   
   // Selected ticket for detailed view
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
@@ -63,12 +71,10 @@ export default function App() {
   // New ticket modal trigger
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const autoEscalatingTicketIdsRef = useRef<Set<string>>(new Set());
   const oneSignalInitRef = useRef(false);
 
-  // Simulated Time values for counting SLA breach hours reactively
-  const [systemClock, setSystemClock] = useState<Date>(() => new Date('2026-05-26T04:35:05Z'));
-  const [clockOffsetMs, setClockOffsetMs] = useState<number>(0);
+  // Live reference time for SLA countdowns and status calculations
+  const [referenceTime, setReferenceTime] = useState<Date>(() => new Date());
 
   // 1. Verify token on startup
   useEffect(() => {
@@ -103,6 +109,7 @@ export default function App() {
     if (!token) return;
     setDataLoading(true);
     setApiError(null);
+    setReferenceTime(new Date());
     try {
       // Check database health & technology mode
       const statusRes = await fetch('/api/health');
@@ -112,15 +119,16 @@ export default function App() {
       }
 
       // Load core entities
-      const [deptsRes, catsRes, tktsRes, usersRes, emailsRes] = await Promise.all([
+      const [deptsRes, catsRes, tktsRes, usersRes, emailsRes, escalationRulesRes] = await Promise.all([
         fetch('/api/departments', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/categories', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/tickets', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/users', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/emails', { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch('/api/emails', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('/api/escalation-rules', { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
-      if (!deptsRes.ok || !catsRes.ok || !tktsRes.ok || !usersRes.ok || !emailsRes.ok) {
+      if (!deptsRes.ok || !catsRes.ok || !tktsRes.ok || !usersRes.ok || !emailsRes.ok || !escalationRulesRes.ok) {
         throw new Error('Some database layers failed to retrieve data from server.');
       }
 
@@ -129,12 +137,15 @@ export default function App() {
       const tktsData = await tktsRes.json();
       const usersData = await usersRes.json();
       const emailsData = await emailsRes.json();
+      const escalationRulesData = await escalationRulesRes.json();
 
       setDepartments(deptsData.departments);
       setCategories(catsData.categories);
       setTickets(tktsData.tickets);
       setCompanyUsers(usersData.users || []);
+      setEmployeeOptions(usersData.employeeOptions || { companies: ['Aaradhya Group'], designationsByDepartmentId: {} });
       setSentEmails(emailsData.emails || []);
+      setEscalationRules(escalationRulesData.rules || []);
     } catch (err: any) {
       setApiError(err.message || 'Error occurred fetching backend resources.');
     } finally {
@@ -215,30 +226,9 @@ export default function App() {
     setCategories([]);
     setTickets([]);
     setCompanyUsers([]);
+    setEscalationRules([]);
     setActiveTab('raised');
     oneSignalInitRef.current = false;
-  };
-
-  // 3. Real-Time ticking simulation ticking loop
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSystemClock(prev => new Date(prev.getTime() + 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Compute simulated time
-  const currentSimulatedTime = useMemo(() => {
-    return new Date(systemClock.getTime() + clockOffsetMs);
-  }, [systemClock, clockOffsetMs]);
-
-  const accelerateTime = (minutes: number) => {
-    setClockOffsetMs(prev => prev + minutes * 60 * 1000);
-  };
-
-  const resetSimulatedTime = () => {
-    setClockOffsetMs(0);
-    setSystemClock(new Date('2026-05-26T04:35:05Z'));
   };
 
   // Find active ticket details
@@ -262,11 +252,11 @@ export default function App() {
     if (activeTab === 'breached') {
       return tickets.filter((ticket) =>
         wasTicketHistoricallyAssignedToUser(ticket, currentUser) &&
-        computeSLAStatus(ticket, currentSimulatedTime) === 'SLA Breached'
+        computeSLAStatus(ticket, referenceTime) === 'SLA Breached'
       );
     }
     return tickets;
-  }, [tickets, activeTab, currentUser, currentSimulatedTime]);
+  }, [tickets, activeTab, currentUser, referenceTime]);
 
   const profileUser = useMemo(() => {
     if (!currentUser) return null;
@@ -274,7 +264,7 @@ export default function App() {
   }, [companyUsers, currentUser]);
 
   // 4. Mutation callbacks hitting our Express database backend
-  const handleCreateTicketInput = async (newTicket: Ticket) => {
+  const handleCreateTicketInput = async (newTicket: CreateTicketPayload) => {
     if (!token) return;
     try {
       setDataLoading(true);
@@ -328,6 +318,9 @@ export default function App() {
     if (!token) return;
     try {
       setDataLoading(true);
+      const previousTicket = tickets.find((ticket) => ticket.id === updatedTicket.id) || null;
+      const dueDateChanged = !!previousTicket && previousTicket.slaDueDate !== updatedTicket.slaDueDate;
+
       const res = await fetch(`/api/tickets/${updatedTicket.id}`, {
         method: 'PUT',
         headers: {
@@ -343,6 +336,9 @@ export default function App() {
       }
 
       await fetchDbData(); // Refresh list cleanly
+      if (dueDateChanged) {
+        alert('Due date updated successfully.');
+      }
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -377,25 +373,6 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    if (!token || tickets.length === 0) return;
-
-    const overdueTickets = tickets.filter(ticket => {
-      if (ticket.isEscalated) return false;
-      if (ticket.status === 'Resolved' || ticket.status === 'Closed') return false;
-      if (autoEscalatingTicketIdsRef.current.has(ticket.id)) return false;
-      return computeSLAStatus(ticket, currentSimulatedTime) === 'SLA Breached';
-    });
-
-    for (const ticket of overdueTickets) {
-      autoEscalatingTicketIdsRef.current.add(ticket.id);
-      handleEscalateTicket(ticket.id, 'Auto-SLA-Breach')
-        .finally(() => {
-          autoEscalatingTicketIdsRef.current.delete(ticket.id);
-        });
-    }
-  }, [tickets, currentSimulatedTime, token]);
-
   const handleAddNewDepartment = async (name: string) => {
     if (!token) return;
     try {
@@ -417,6 +394,115 @@ export default function App() {
       await fetchDbData();
     } catch (err: any) {
       alert(err.message);
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  const handleCreateUser = async (payload: CreateUserPayload) => {
+    if (!token) {
+      return { success: false, error: 'Your session has expired. Please sign in again.' };
+    }
+
+    try {
+      setDataLoading(true);
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const rawResponse = await res.text();
+      let result: any = {};
+      try {
+        result = rawResponse ? JSON.parse(rawResponse) : {};
+      } catch {
+        result = { error: rawResponse || 'Unexpected server response.' };
+      }
+
+      if (!res.ok) {
+        throw new Error(result.error || `User creation failed with status ${res.status}.`);
+      }
+
+      await fetchDbData();
+      return { success: true, user: result.user };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'User creation failed.' };
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (email: string) => {
+    if (!token) {
+      return { success: false, error: 'Your session has expired. Please sign in again.' };
+    }
+
+    try {
+      setDataLoading(true);
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const rawResponse = await res.text();
+      let result: any = {};
+      try {
+        result = rawResponse ? JSON.parse(rawResponse) : {};
+      } catch {
+        result = { error: rawResponse || 'Unexpected server response.' };
+      }
+
+      if (!res.ok) {
+        throw new Error(result.error || 'User delete failed.');
+      }
+
+      await fetchDbData();
+      return { success: true, message: result.message as string };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'User delete failed.' };
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  const handleSaveEscalationRule = async (departmentId: string, designationLevels: string[]) => {
+    if (!token) {
+      return { success: false, error: 'Your session has expired. Please sign in again.' };
+    }
+
+    try {
+      setDataLoading(true);
+      const res = await fetch('/api/escalation-rules', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ departmentId, designationLevels })
+      });
+
+      const rawResponse = await res.text();
+      let result: any = {};
+      try {
+        result = rawResponse ? JSON.parse(rawResponse) : {};
+      } catch {
+        result = { error: rawResponse || 'Unexpected server response.' };
+      }
+
+      if (!res.ok) {
+        throw new Error(result.error || 'Escalation rule save failed.');
+      }
+
+      await fetchDbData();
+      return { success: true, rule: result.rule as EscalationRule };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Escalation rule save failed.' };
     } finally {
       setDataLoading(false);
     }
@@ -470,6 +556,38 @@ export default function App() {
       return { success: true, message: data.message || 'Password reset successfully.' };
     } catch (err: any) {
       return { success: false, error: err.message || 'Password reset failed.' };
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  const handleResetTickets = async () => {
+    if (!token) return { success: false, error: 'Admin session is expired or not authenticated.' };
+    try {
+      setDataLoading(true);
+      const res = await fetch('/api/admin/reset-tickets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const rawResponse = await res.text();
+      const data = rawResponse ? JSON.parse(rawResponse) : {};
+
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Ticket reset failed.' };
+      }
+
+      setSelectedTicketId(null);
+      await fetchDbData();
+      return {
+        success: true,
+        message: data.message || 'All tickets were deleted. The next ticket will start from TKT-1.'
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Ticket reset failed.' };
     } finally {
       setDataLoading(false);
     }
@@ -598,68 +716,15 @@ export default function App() {
               />
             </div>
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] bg-white/8 text-cyan-200 border border-white/10 px-3 py-1 rounded-full font-mono whitespace-nowrap shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-md">
-                  Full-Stack v1.5
-                </span>
-              </div>
-              <h1 className="mt-3 text-[1.26rem] sm:text-[1.52rem] md:text-[1.98rem] font-black tracking-[-0.045em] leading-[1.02] text-white max-w-2xl">
-                Aaradhya Group Ticket&nbsp;Management System
+              <h1 className="text-[1.26rem] sm:text-[1.52rem] md:text-[1.98rem] font-black tracking-[-0.045em] leading-[1.02] text-white max-w-2xl">
+                AARADHYA GROUP
+                <span className="mt-1 block font-semibold">(Internal Ticket Management System)</span>
               </h1>
             </div>
           </div>
 
-          {/* Persona role indicator & Clock */}
+          {/* Active account controls */}
           <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 xl:justify-end xl:pl-4">
-            
-            {/* Live Clock Simulator interface */}
-            <div className="w-full sm:w-auto bg-slate-900/34 border border-white/10 px-4 py-3 rounded-[24px] flex items-center gap-3 text-xs shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl">
-              <div className="h-10 w-10 rounded-2xl bg-blue-500/12 border border-blue-300/16 flex items-center justify-center shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                <Clock className="w-4.5 h-4.5 text-blue-300 animate-pulse" />
-              </div>
-              <div className="min-w-0 sm:min-w-[185px]">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.22em] leading-none">Simulation Clock</span>
-                <span className="font-mono text-white text-sm md:text-[15px] font-semibold tracking-tight">
-                  {currentSimulatedTime.toLocaleDateString()} {currentSimulatedTime.toLocaleTimeString()} UTC
-                </span>
-              </div>
-
-              {/* Incremental testing fast timers */}
-              <div className="flex flex-wrap items-center gap-1 pl-0 sm:pl-3 sm:border-l border-white/10">
-                <button
-                  onClick={() => accelerateTime(15)}
-                  className="px-2.5 py-1.5 bg-white/7 text-white hover:bg-white/12 rounded-xl hover:text-blue-200 tracking-tight text-[10px] flex items-center gap-0.5 border border-white/8 transition-all"
-                  title="Forward 15 minutes"
-                >
-                  <FastForward className="w-3 h-3" />
-                  <span>+15m</span>
-                </button>
-                <button
-                  onClick={() => accelerateTime(120)}
-                  className="px-2.5 py-1.5 bg-white/7 text-white hover:bg-white/12 rounded-xl hover:text-blue-200 tracking-tight text-[10px] flex items-center gap-0.5 border border-white/8 transition-all"
-                  title="Forward 2 hours"
-                >
-                  <FastForward className="w-3 h-3" />
-                  <span>+2h</span>
-                </button>
-                <button
-                  onClick={() => accelerateTime(1440)}
-                  className="px-2.5 py-1.5 bg-white/7 text-white hover:bg-white/12 rounded-xl hover:text-blue-200 tracking-tight text-[10px] flex items-center gap-0.5 border border-white/8 transition-all"
-                  title="Forward 1 day"
-                >
-                  <FastForward className="w-3 h-3" />
-                  <span>+1d</span>
-                </button>
-                <button
-                  onClick={resetSimulatedTime}
-                  className="p-1.5 bg-white/7 hover:bg-white/12 text-slate-400 hover:text-white rounded-xl border border-white/8 transition-all"
-                  title="Reset offset to default"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-
             {/* Current Active Account Card */}
             <button
               onClick={() => setIsProfileModalOpen(true)}
@@ -708,6 +773,13 @@ export default function App() {
               >
                 <TicketIcon className="w-4 h-4 text-indigo-500" />
                 <span>All Complaints ({tickets.length})</span>
+              </button>
+            )}
+
+            {currentUser?.role === 'Admin' && (
+              <button id="tab-btn-integrations" onClick={() => { setActiveTab('integrations'); setSelectedTicketId(null); }} className={`px-3 h-full flex items-center space-x-2 text-xs font-bold border-b-2 transition-all shrink-0 ${activeTab === 'integrations' ? 'border-blue-600 text-blue-600 font-extrabold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
+                <Plug className="w-4 h-4 text-indigo-500" />
+                <span>Integration & API</span>
               </button>
             )}
 
@@ -766,7 +838,7 @@ export default function App() {
                 <span>
                   My Breached Tickets ({tickets.filter((ticket) =>
                     wasTicketHistoricallyAssignedToUser(ticket, currentUser) &&
-                    computeSLAStatus(ticket, currentSimulatedTime) === 'SLA Breached'
+                    computeSLAStatus(ticket, referenceTime) === 'SLA Breached'
                   ).length})
                 </span>
               </button>
@@ -812,10 +884,21 @@ export default function App() {
           </div>
 
           <div className="flex items-center justify-between sm:justify-end space-x-4">
-            {/* Active Core Storage Indicator */}
-            <div className="hidden sm:flex items-center space-x-1.5 text-xs text-slate-500 font-mono">
-              <Database className="w-3.5 h-3.5 text-blue-500" />
-              <span>Engine: <strong>{dbType}</strong></span>
+            <div
+              className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold ${
+                dbType === 'MongoDB' && !apiError
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-rose-200 bg-rose-50 text-rose-700'
+              }`}
+              title={dbType === 'MongoDB' && !apiError ? 'MongoDB connected' : 'MongoDB not connected'}
+              role="status"
+            >
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${
+                  dbType === 'MongoDB' && !apiError ? 'bg-emerald-500' : 'bg-rose-500'
+                }`}
+              />
+              <span>{dbType === 'MongoDB' && !apiError ? 'MongoDB Connected' : 'MongoDB Not Connected'}</span>
             </div>
 
             <button
@@ -835,27 +918,6 @@ export default function App() {
       {/* 3. CORE ROUTER APPLICATION VIEW SPACE */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full overflow-y-auto">
         
-        {/* Dynamic active user header alert for user testing */}
-        <div className="bg-blue-50 border border-blue-100 p-3.5 rounded-2xl mb-6 flex items-center justify-between text-xs text-blue-800">
-          <div className="flex items-center space-x-2">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-            </span>
-            <p>
-              {currentUser?.role === 'Admin' ? (
-                <span>
-                  <strong>Admin Session Active ({currentUser?.email})</strong>: You possess absolute SLA overriding rights. You can append custom departments, configure category-wise SLAs, assign agents, and update ticket states directly.
-                </span>
-              ) : (
-                <span>
-                  <strong>Corporate Employee Workspace Active ({currentUser?.name})</strong>: You have a separate view/navbar where we list only complaints you raised or those assigned to you.
-                </span>
-              )}
-            </p>
-          </div>
-        </div>
-
         {/* Dynamic API status warning bar */}
         {apiError && (
           <div className="p-4 bg-rose-50 border border-rose-100 text-rose-800 text-xs rounded-2xl mb-6 flex items-start space-x-2">
@@ -870,12 +932,12 @@ export default function App() {
         {/* Dynamic context rendering */}
         {selectedTicket ? (
           /* Render Particular Selected Ticket Detail contextual controller */
-          <TicketDetailView
-            ticket={selectedTicket}
-            referenceTime={currentSimulatedTime}
-            currentUser={currentUser}
-            isAdmin={currentUser?.role === 'Admin'}
-            companyUsers={companyUsers}
+            <TicketDetailView
+              ticket={selectedTicket}
+              referenceTime={referenceTime}
+              currentUser={currentUser}
+              isAdmin={currentUser?.role === 'Admin'}
+              companyUsers={companyUsers}
             onClose={() => setSelectedTicketId(null)}
             onUpdateTicket={handleUpdateTicketInput}
             onEscalateTicket={handleEscalateTicket}
@@ -889,7 +951,7 @@ export default function App() {
                 tickets={visibleTickets}
                 departments={departments}
                 categories={categories}
-                referenceTime={currentSimulatedTime}
+                referenceTime={referenceTime}
                 onSelectTicket={(t) => setSelectedTicketId(t.id)}
                 onOpenCreateTicket={() => setIsCreateModalOpen(true)}
               />
@@ -901,26 +963,34 @@ export default function App() {
                 departments={departments}
                 categories={categories}
                 companyUsers={companyUsers}
-                referenceTime={currentSimulatedTime}
-                sentEmails={sentEmails}
+                referenceTime={referenceTime}
                 onSelectTicket={(ticket) => setSelectedTicketId(ticket.id)}
               />
             )}
 
             {activeTab === 'config' && currentUser?.role === 'Admin' && (
               <AdminConfigPanel
+                token={token!}
                 departments={departments}
                 categories={categories}
                 companyUsers={companyUsers}
+                employeeOptions={employeeOptions}
+                escalationRules={escalationRules}
                 dbType={dbType}
                 onAddDepartment={handleAddNewDepartment}
                 onAddCategory={handleAddNewCategory}
+                onCreateUser={handleCreateUser}
+                onDeleteUser={handleDeleteUser}
+                onSaveEscalationRule={handleSaveEscalationRule}
                 onDeleteDepartment={handleDeleteDepartment}
                 onDeleteCategory={handleDeleteCategory}
                 onMigrateDatabase={handleMigrateDatabase}
                 onResetEmployeePassword={handleResetEmployeePassword}
+                onResetTickets={handleResetTickets}
               />
             )}
+
+            {activeTab === 'integrations' && currentUser?.role === 'Admin' && <IntegrationApiPanel token={token!} />}
           </div>
         )}
 
@@ -934,7 +1004,6 @@ export default function App() {
             setIsCreateModalOpen(false);
           }}
           departments={departments}
-          categories={categories}
           currentUser={currentUser}
           companyUsers={companyUsers}
           onSubmit={handleCreateTicketInput}

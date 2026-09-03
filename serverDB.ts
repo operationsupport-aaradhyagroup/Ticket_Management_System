@@ -10,6 +10,7 @@ dotenv.config();
 // Define DB fallback file path
 const DISK_DB_PATH = path.join(process.cwd(), 'db_disk.json');
 const EMPLOYEE_IMPORT_PATH = path.join(process.cwd(), 'data', 'employee-import.json');
+const ESCALATION_RULES_DISK_PATH = path.join(process.cwd(), 'escalation-rules.json');
 
 interface IImportedEmployeeRow {
   employeeId: string;
@@ -47,6 +48,8 @@ export interface IUser {
   designation?: string;
   reportingManager?: string;
   reportingManagerEmail?: string;
+  isDeleted?: boolean;
+  isManuallyManaged?: boolean;
 }
 
 export interface IDepartment {
@@ -69,6 +72,15 @@ export interface ISentEmail {
   sentAt: string;
   notificationType: 'Assignment' | 'Escalation' | 'Closure';
   escalationType?: 'Manual' | 'Auto-SLA-Breach';
+}
+
+export interface IEscalationRule {
+  id: string;
+  departmentId: string;
+  departmentName: string;
+  designationLevels: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface IComplaintCategory {
@@ -123,6 +135,80 @@ export interface ITicket {
   isEscalated?: boolean;
   lastReminderSentAt?: string | null;
   reminderCount?: number;
+  source?: 'ADMIN' | 'PORTAL' | 'API' | 'PUBLIC_FORM' | 'EMAIL' | 'INTEGRATION';
+  requesterPhone?: string;
+  customFields?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  createdBy?: string;
+  integrationClientId?: string;
+  updatedAt?: string;
+}
+
+export interface IApiClient {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  keyHash: string;
+  active: boolean;
+  permissions: string[];
+  createdBy: string;
+  createdAt: string;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+}
+
+export interface IIdempotencyRecord {
+  integrationClientId: string;
+  idempotencyKey: string;
+  relatedTicketId: string;
+  createdAt: string;
+}
+
+export interface IApiAuditEvent {
+  id: string;
+  eventType: string;
+  actor: string;
+  apiClientId?: string;
+  ticketId?: string;
+  createdAt: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface IEmailTicketSettings {
+  id: 'email-ticket';
+  enabled: boolean;
+  subjectPrefix: string;
+  defaultAssigneeEmail: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface IGmailIntegrationCredential {
+  id: string;
+  email: string;
+  userEmail: string;
+  encryptedRefreshToken: string;
+  connectedAt: string;
+  updatedAt: string;
+}
+
+export type InboundEmailStatus = 'PROCESSING' | 'CREATED' | 'IGNORED_SUBJECT' | 'DUPLICATE' | 'FAILED' | 'DEFAULT_ASSIGNEE_USED';
+
+export interface IInboundEmailEvent {
+  messageId: string;
+  fromEmail: string;
+  toEmails: string[];
+  originalToEmails?: string[];
+  subject: string;
+  status: InboundEmailStatus;
+  ticketId: string;
+  assignedAgentEmail: string;
+  errorCode: string;
+  errorMessage: string;
+  receivedAt: string;
+  processedAt: string;
+  createdAt: string;
 }
 
 // Memory Cache fallback store for disk DB mode
@@ -132,6 +218,12 @@ interface IDiskStore {
   categories: IComplaintCategory[];
   tickets: ITicket[];
   emails: ISentEmail[];
+  apiClients?: IApiClient[];
+  idempotencyRecords?: IIdempotencyRecord[];
+  apiAuditEvents?: IApiAuditEvent[];
+  emailTicketSettings?: IEmailTicketSettings;
+  inboundEmailEvents?: IInboundEmailEvent[];
+  gmailIntegrationCredentials?: IGmailIntegrationCredential[];
 }
 
 let diskDb: IDiskStore = {
@@ -148,7 +240,13 @@ let isMongoConnected = false;
 
 // Register schemas for Mongoose if it's active
 let UserSchema: any, DeptSchema: any, CatSchema: any, TicketSchema: any, EmailSchema: any;
-let UserModel: any, DeptModel: any, CatModel: any, TicketModel: any, EmailModel: any;
+let EscalationRuleSchema: any, ApiClientSchema: any, IdempotencySchema: any, ApiAuditSchema: any;
+let EmailTicketSettingsSchema: any, InboundEmailEventSchema: any;
+let GmailIntegrationCredentialSchema: any;
+let UserModel: any, DeptModel: any, CatModel: any, TicketModel: any, EmailModel: any, EscalationRuleModel: any;
+let ApiClientModel: any, IdempotencyModel: any, ApiAuditModel: any;
+let EmailTicketSettingsModel: any, InboundEmailEventModel: any;
+let GmailIntegrationCredentialModel: any;
 
 if (useMongo) {
   try {
@@ -167,7 +265,9 @@ if (useMongo) {
       departmentName: { type: String, default: '' },
       designation: { type: String, default: '' },
       reportingManager: { type: String, default: '' },
-      reportingManagerEmail: { type: String, default: '' }
+      reportingManagerEmail: { type: String, default: '' },
+      isDeleted: { type: Boolean, default: false },
+      isManuallyManaged: { type: Boolean, default: false }
     });
 
     DeptSchema = new Schema({
@@ -226,7 +326,14 @@ if (useMongo) {
       }],
       isEscalated: { type: Boolean, default: false },
       lastReminderSentAt: { type: String, default: null },
-      reminderCount: { type: Number, default: 0 }
+      reminderCount: { type: Number, default: 0 },
+      source: { type: String, enum: ['ADMIN', 'PORTAL', 'API', 'PUBLIC_FORM', 'EMAIL', 'INTEGRATION'], default: 'PORTAL', index: true },
+      requesterPhone: { type: String, default: '' },
+      customFields: { type: Schema.Types.Mixed, default: undefined },
+      metadata: { type: Schema.Types.Mixed, default: undefined },
+      createdBy: { type: String, default: '' },
+      integrationClientId: { type: String, default: '', index: true },
+      updatedAt: { type: String, default: '' }
     });
 
     EmailSchema = new Schema({
@@ -242,14 +349,168 @@ if (useMongo) {
       escalationType: { type: String, enum: ['Manual', 'Auto-SLA-Breach'], required: false }
     });
 
+    EscalationRuleSchema = new Schema({
+      id: { type: String, unique: true, required: true },
+      departmentId: { type: String, required: true },
+      departmentName: { type: String, required: true },
+      designationLevels: [{ type: String }],
+      createdAt: { type: String, required: true },
+      updatedAt: { type: String, required: true }
+    });
+
+    ApiClientSchema = new Schema({
+      id: { type: String, unique: true, required: true },
+      name: { type: String, required: true },
+      keyPrefix: { type: String, unique: true, required: true, index: true },
+      keyHash: { type: String, required: true, select: false },
+      active: { type: Boolean, default: true, index: true },
+      permissions: [{ type: String }],
+      createdBy: { type: String, required: true },
+      createdAt: { type: String, required: true },
+      lastUsedAt: { type: String, default: null },
+      expiresAt: { type: String, default: null },
+      revokedAt: { type: String, default: null }
+    });
+    IdempotencySchema = new Schema({
+      integrationClientId: { type: String, required: true },
+      idempotencyKey: { type: String, required: true },
+      relatedTicketId: { type: String, required: true },
+      createdAt: { type: String, required: true }
+    });
+    IdempotencySchema.index({ integrationClientId: 1, idempotencyKey: 1 }, { unique: true });
+    ApiAuditSchema = new Schema({
+      id: { type: String, unique: true, required: true },
+      eventType: { type: String, required: true, index: true },
+      actor: { type: String, required: true },
+      apiClientId: { type: String, default: '' },
+      ticketId: { type: String, default: '' },
+      createdAt: { type: String, required: true },
+      metadata: { type: Schema.Types.Mixed, default: undefined }
+    });
+    EmailTicketSettingsSchema = new Schema({
+      id: { type: String, unique: true, required: true, default: 'email-ticket' },
+      enabled: { type: Boolean, default: false },
+      subjectPrefix: { type: String, required: true, default: 'Resolve this Ticket --' },
+      defaultAssigneeEmail: { type: String, required: true, default: 'operation_support@kisansuvidha.com' },
+      updatedAt: { type: String, required: true },
+      updatedBy: { type: String, required: true }
+    });
+    InboundEmailEventSchema = new Schema({
+      messageId: { type: String, unique: true, required: true, index: true },
+      fromEmail: { type: String, required: true },
+      toEmails: [{ type: String }],
+      originalToEmails: [{ type: String }],
+      subject: { type: String, default: '' },
+      status: { type: String, enum: ['PROCESSING', 'CREATED', 'IGNORED_SUBJECT', 'DUPLICATE', 'FAILED', 'DEFAULT_ASSIGNEE_USED'], required: true, index: true },
+      ticketId: { type: String, default: '', index: true },
+      assignedAgentEmail: { type: String, default: '' },
+      errorCode: { type: String, default: '' },
+      errorMessage: { type: String, default: '' },
+      receivedAt: { type: String, required: true, index: true },
+      processedAt: { type: String, default: '' },
+      createdAt: { type: String, required: true }
+    });
+    GmailIntegrationCredentialSchema = new Schema({
+      id: { type: String, unique: true, required: true },
+      email: { type: String, required: true, unique: true },
+      userEmail: { type: String, required: true },
+      encryptedRefreshToken: { type: String, required: true, select: false },
+      connectedAt: { type: String, required: true },
+      updatedAt: { type: String, required: true }
+    });
+
     UserModel = mongoose.models.User || mongoose.model('User', UserSchema);
     DeptModel = mongoose.models.Department || mongoose.model('Department', DeptSchema);
     CatModel = mongoose.models.Category || mongoose.model('Category', CatSchema);
     TicketModel = mongoose.models.Ticket || mongoose.model('Ticket', TicketSchema);
     EmailModel = mongoose.models.SentEmail || mongoose.model('SentEmail', EmailSchema);
+    EscalationRuleModel = mongoose.models.EscalationRule || mongoose.model('EscalationRule', EscalationRuleSchema);
+    ApiClientModel = mongoose.models.ApiClient || mongoose.model('ApiClient', ApiClientSchema);
+    IdempotencyModel = mongoose.models.TicketIdempotency || mongoose.model('TicketIdempotency', IdempotencySchema);
+    ApiAuditModel = mongoose.models.ApiAuditEvent || mongoose.model('ApiAuditEvent', ApiAuditSchema);
+    EmailTicketSettingsModel = mongoose.models.EmailTicketSettings || mongoose.model('EmailTicketSettings', EmailTicketSettingsSchema);
+    InboundEmailEventModel = mongoose.models.InboundEmailEvent || mongoose.model('InboundEmailEvent', InboundEmailEventSchema);
+    GmailIntegrationCredentialModel = mongoose.models.GmailIntegrationCredential || mongoose.model('GmailIntegrationCredential', GmailIntegrationCredentialSchema);
   } catch (err) {
     console.warn('Mongoose Schemas failed to prepare: ', err);
   }
+}
+
+function loadEscalationRulesFromDisk(): IEscalationRule[] {
+  try {
+    if (!fs.existsSync(ESCALATION_RULES_DISK_PATH)) {
+      fs.writeFileSync(ESCALATION_RULES_DISK_PATH, JSON.stringify([], null, 2), 'utf-8');
+      return [];
+    }
+    const raw = fs.readFileSync(ESCALATION_RULES_DISK_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Failed reading escalation rules store', error);
+    return [];
+  }
+}
+
+function saveEscalationRulesToDisk(rules: IEscalationRule[]) {
+  try {
+    fs.writeFileSync(ESCALATION_RULES_DISK_PATH, JSON.stringify(rules, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('Failed writing escalation rules store', error);
+  }
+}
+
+function normalizeDesignation(value: string): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function designationRank(value: string): number {
+  const normalized = normalizeDesignation(value);
+  if (!normalized) return 999;
+  if (/\b(intern|trainee|apprentice)\b/.test(normalized)) return 10;
+  if (/\b(junior|assistant|support|runner|field assistant)\b/.test(normalized)) return 20;
+  if (/\b(executive|officer|associate|adviser|advisor|developer|designer|specialist|engineer|accountant|coordinator|controller)\b/.test(normalized)) return 30;
+  if (/\b(lead|senior)\b/.test(normalized)) return 40;
+  if (/\b(manager|asm)\b/.test(normalized)) return 50;
+  if (/\b(head)\b/.test(normalized)) return 60;
+  if (/\b(general manager|business head|ceo)\b/.test(normalized)) return 70;
+  return 35;
+}
+
+function inferEscalationRules(users: IUser[], departments: IDepartment[]): IEscalationRule[] {
+  const now = new Date().toISOString();
+  return departments.map((department) => {
+    const uniqueDesignations = Array.from(
+      new Set(
+        users
+          .filter((user) => user.departmentId === department.id)
+          .map((user) => String(user.designation || '').trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => {
+      const rankDiff = designationRank(a) - designationRank(b);
+      if (rankDiff !== 0) return rankDiff;
+      return a.localeCompare(b);
+    });
+
+    const hasHeadLikeDesignation = uniqueDesignations.some((designation) => /\bhead\b/i.test(designation));
+    const designationLevels = hasHeadLikeDesignation
+      ? uniqueDesignations
+      : [...uniqueDesignations, 'Dept Head'].filter(Boolean);
+
+    return {
+      id: `esc-rule-${department.id}`,
+      departmentId: department.id,
+      departmentName: department.name,
+      designationLevels,
+      createdAt: now,
+      updatedAt: now
+    };
+  });
 }
 
 // Synchronous disk reading helpers
@@ -259,9 +520,28 @@ function loadFromDisk() {
       const data = fs.readFileSync(DISK_DB_PATH, 'utf-8');
       diskDb = JSON.parse(data);
       if (!diskDb.emails) diskDb.emails = [];
+      if (!diskDb.apiClients) diskDb.apiClients = [];
+      if (!diskDb.idempotencyRecords) diskDb.idempotencyRecords = [];
+      if (!diskDb.apiAuditEvents) diskDb.apiAuditEvents = [];
+      if (!diskDb.inboundEmailEvents) diskDb.inboundEmailEvents = [];
+      if (!diskDb.gmailIntegrationCredentials) diskDb.gmailIntegrationCredentials = [];
+      if (!diskDb.emailTicketSettings) {
+        diskDb.emailTicketSettings = {
+          id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
+          defaultAssigneeEmail: 'operation_support@kisansuvidha.com', updatedAt: '', updatedBy: 'system'
+        };
+      }
     } else {
       // Seed default mock structure
-      diskDb = { users: [], departments: [], categories: [], tickets: [], emails: [] };
+      diskDb = {
+        users: [], departments: [], categories: [], tickets: [], emails: [], apiClients: [], idempotencyRecords: [], apiAuditEvents: [],
+        inboundEmailEvents: [],
+        gmailIntegrationCredentials: [],
+        emailTicketSettings: {
+          id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
+          defaultAssigneeEmail: 'operation_support@kisansuvidha.com', updatedAt: '', updatedBy: 'system'
+        }
+      };
       saveToDisk();
     }
   } catch (error) {
@@ -528,82 +808,16 @@ async function seedDefaults() {
   const { importedDepartments, importedUsers } = buildImportedSeeds('2026-05-20T08:00:00Z');
 
   // Helper relative dates
-  const baseClock = new Date('2026-05-26T04:35:05Z');
-  const getRelativeDate = (offsetMinutes: number): string => {
-    const base = new Date(baseClock);
-    base.setMinutes(base.getMinutes() + offsetMinutes);
-    return base.toISOString();
-  };
+  const LEGACY_DEMO_TICKET_IDS = ['TKT-2491', 'TKT-1082'];
 
-  const INITIAL_TICKETS: ITicket[] = [
-    {
-      id: 'TKT-2491',
-      title: 'E-commerce API data sync syncing slow',
-      description: 'Data sync has been delayed since morning. Sales statistics are not populated in the internal dashboard.',
-      departmentId: 'dept-it',
-      departmentName: 'IT Department',
-      categoryId: 'cat-it-1',
-      categoryName: 'Data not coming properly',
-      status: 'In Progress',
-      priority: 'High',
-      creatorEmail: 'rahulpatel789856@gmail.com',
-      creatorName: 'Rahul Patel',
-      assignedAgent: 'Jane Doe (IT Lead)',
-      slaType: 'Default',
-      slaDurationValue: 2,
-      slaDurationUnit: 'hours',
-      slaDueDate: getRelativeDate(60), // Due in 1 hour
-      slaStatus: 'Within SLA',
-      slaBreachedAt: null,
-      createdAt: getRelativeDate(-60),
-      resolvedAt: null,
-      history: [
-        { id: 'h1', timestamp: getRelativeDate(-60), userEmail: 'rahulpatel789856@gmail.com', action: 'Ticket created with default SLA (2 hours)' },
-        { id: 'h2', timestamp: getRelativeDate(-45), userEmail: 'rahulpatel789856@gmail.com', action: 'Assigned to Jane Doe (IT Lead) & marked In Progress' }
-      ]
-    },
-    {
-      id: 'TKT-1082',
-      title: 'Offboarding procedure guidelines missing in portal',
-      description: 'Need the latest copy of offboarding protocols for employees leaving the Accounts department.',
-      departmentId: 'dept-hr',
-      departmentName: 'HR Department',
-      categoryId: 'cat-hr-2',
-      categoryName: 'Onboarding Assistance',
-      status: 'Open',
-      priority: 'Medium',
-      creatorEmail: 'jane.smith@company.com',
-      creatorName: 'Jane Smith',
-      assignedAgent: 'Unassigned',
-      slaType: 'Default',
-      slaDurationValue: 2,
-      slaDurationUnit: 'days',
-      slaDueDate: getRelativeDate(-2880), // Due 2 days ago (Breached)
-      slaStatus: 'SLA Breached',
-      slaBreachedAt: getRelativeDate(-2880),
-      createdAt: getRelativeDate(-5760),
-      resolvedAt: null,
-      history: [
-        { id: 'h3', timestamp: getRelativeDate(-5760), userEmail: 'jane.smith@company.com', action: 'Ticket created with default SLA (2 days)' }
-      ]
-    }
-  ];
-
-  // Hash password
+  // Only the administrator is seeded as a login account. Imported employees are
+  // retained for department metadata but are not automatic/sample user accounts.
   const salt = await bcrypt.genSalt(10);
-  const defaultAdminHash = await bcrypt.hash('admin123', salt);
   const aaradhyaAdminHash = await bcrypt.hash('Aaradhya@123', salt);
-  const importedUsersWithPasswords: IUser[] = [];
-  for (const importedUser of importedUsers) {
-    importedUsersWithPasswords.push({
-      ...importedUser,
-      passwordHash: await bcrypt.hash(importedUser.employeeId || 'user123', salt)
-    });
-  }
+  const importedEmployeeEmails = importedUsers.map(user => user.email.toLowerCase().trim());
 
   const INITIAL_USERS: IUser[] = [
-    { email: 'aaradhya.admin@company.com', name: 'Aaradhya Group Admin', passwordHash: aaradhyaAdminHash, role: 'Admin', departmentId: 'dept-admin', employeeId: 'AARADHYA-ADMIN', designation: 'Super Admin', departmentName: 'Admin Department', company: 'Aaradhya Group' },
-    ...importedUsersWithPasswords
+    { email: 'aaradhya.admin@company.com', name: 'Aaradhya Group Admin', passwordHash: aaradhyaAdminHash, role: 'Admin', departmentId: 'dept-admin', employeeId: 'AARADHYA-ADMIN', designation: 'Super Admin', departmentName: 'Admin Department', company: 'Aaradhya Group' }
   ];
 
   const MERGED_DEPARTMENTS: IDepartment[] = [...INITIAL_DEPARTMENTS];
@@ -661,7 +875,7 @@ async function seedDefaults() {
       const existingUsers = await UserModel.find({}).lean();
       if (existingUsers.length === 0) {
         await UserModel.insertMany(INITIAL_USERS);
-        console.log('Seeded MongoDB default and company users.');
+        console.log('Seeded MongoDB administrator account.');
       } else {
         for (const seedUser of INITIAL_USERS) {
           await UserModel.updateOne(
@@ -689,6 +903,7 @@ async function seedDefaults() {
           );
         }
       }
+
       const deptCount = await DeptModel.countDocuments();
       if (deptCount === 0) {
         await DeptModel.insertMany(MERGED_DEPARTMENTS);
@@ -729,11 +944,6 @@ async function seedDefaults() {
             { upsert: true }
           );
         }
-      }
-      const ticketCount = await TicketModel.countDocuments();
-      if (ticketCount === 0) {
-        await TicketModel.insertMany(INITIAL_TICKETS);
-        console.log('Seeded MongoDB default tickets.');
       }
 
       // Live migration routine of any custom departments/categories/tickets/emails from local disk
@@ -788,12 +998,28 @@ async function seedDefaults() {
         console.log(`Auto-Migrated local data to MongoDB: ${uCount} users, ${dCount} depts, ${cCount} cats, ${tCount} tkts, ${eCount} emails.`);
       }
 
+      if (importedEmployeeEmails.length > 0) {
+        await UserModel.updateMany(
+          { email: { $in: importedEmployeeEmails }, role: { $ne: 'Admin' }, isManuallyManaged: { $ne: true } },
+          { $set: { isDeleted: true } }
+        );
+      }
+
+      await TicketModel.deleteMany({ id: { $in: LEGACY_DEMO_TICKET_IDS } });
+      await EmailModel.deleteMany({ ticketId: { $in: LEGACY_DEMO_TICKET_IDS } });
+
     } catch (e) {
       console.error('Mongo Seeding and migration error:', e);
     }
   } else {
     // Disk DB Mock Seeding
     diskDb.users = mergeSeedUsers(diskDb.users);
+    const importedEmailSet = new Set(importedEmployeeEmails);
+    diskDb.users = diskDb.users.map(user =>
+      user.role !== 'Admin' && !user.isManuallyManaged && importedEmailSet.has(user.email.toLowerCase().trim())
+        ? { ...user, isDeleted: true }
+        : user
+    );
     if (diskDb.departments.length === 0) {
       diskDb.departments = MERGED_DEPARTMENTS;
     } else {
@@ -833,9 +1059,8 @@ async function seedDefaults() {
         }
       }
     }
-    if (diskDb.tickets.length === 0) {
-      diskDb.tickets = INITIAL_TICKETS;
-    }
+    diskDb.tickets = diskDb.tickets.filter(ticket => !LEGACY_DEMO_TICKET_IDS.includes(ticket.id));
+    diskDb.emails = diskDb.emails.filter(email => !LEGACY_DEMO_TICKET_IDS.includes(email.ticketId));
     saveToDisk();
     console.log('Seeded JSON-Disk database defaults.');
   }
@@ -874,29 +1099,79 @@ export const dbActions = {
   // --- USERS SECTION ---
   findUserByEmail: async (email: string): Promise<IUser | null> => {
     if (isMongoConnected) {
-      const u = await UserModel.findOne({ email: email.toLowerCase().trim() });
+      const u = await UserModel.findOne({
+        email: email.toLowerCase().trim(),
+        isDeleted: { $ne: true }
+      });
       return u ? u.toObject() : null;
     }
     const emailKey = email.toLowerCase().trim();
-    return diskDb.users.find(u => u.email.toLowerCase().trim() === emailKey) || null;
+    return diskDb.users.find(u => u.email.toLowerCase().trim() === emailKey && !u.isDeleted) || null;
   },
 
   createUser: async (user: IUser): Promise<IUser> => {
     user.email = user.email.toLowerCase().trim();
     if (isMongoConnected) {
-      const created = await UserModel.create(user);
-      return created.toObject();
+      return await UserModel.findOneAndUpdate(
+        { email: user.email },
+        { $set: { ...user, isDeleted: false, isManuallyManaged: true } },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      ).lean();
     }
-    diskDb.users.push(user);
+    const existingIndex = diskDb.users.findIndex(
+      existingUser => existingUser.email.toLowerCase().trim() === user.email
+    );
+    if (existingIndex === -1) {
+      diskDb.users.push({ ...user, isDeleted: false, isManuallyManaged: true });
+    } else {
+      diskDb.users[existingIndex] = { ...user, isDeleted: false, isManuallyManaged: true };
+    }
     saveToDisk();
     return user;
   },
 
   getUsers: async (): Promise<IUser[]> => {
     if (isMongoConnected) {
-      return await UserModel.find({}).lean();
+      return await UserModel.find({ isDeleted: { $ne: true } }).lean();
     }
-    return diskDb.users;
+    return diskDb.users.filter(user => !user.isDeleted);
+  },
+
+  getEmployeeOptions: async (): Promise<{
+    companies: string[];
+    designationsByDepartmentId: Record<string, string[]>;
+  }> => {
+    const storedUsers: IUser[] = isMongoConnected
+      ? await UserModel.find({ role: { $ne: 'Admin' } }).lean()
+      : diskDb.users.filter(user => user.role !== 'Admin');
+    const importedRows = loadEmployeeImportRows();
+    const companies = new Set<string>(['Aaradhya Group']);
+    const designationSets = new Map<string, Set<string>>();
+
+    const addOption = (departmentId: string, designation?: string, company?: string) => {
+      const cleanCompany = String(company || '').trim();
+      const cleanDesignation = String(designation || '').trim();
+      if (cleanCompany) companies.add(cleanCompany);
+      if (!departmentId || !cleanDesignation) return;
+      if (!designationSets.has(departmentId)) designationSets.set(departmentId, new Set());
+      designationSets.get(departmentId)!.add(cleanDesignation);
+    };
+
+    storedUsers.forEach(user => addOption(user.departmentId || '', user.designation, user.company));
+    importedRows.forEach(row => {
+      const department = resolveDepartmentSeed(row.department);
+      addOption(department.id, row.designation, row.company);
+    });
+
+    return {
+      companies: Array.from(companies).sort((a, b) => a.localeCompare(b)),
+      designationsByDepartmentId: Object.fromEntries(
+        Array.from(designationSets.entries()).map(([departmentId, values]) => [
+          departmentId,
+          Array.from(values).sort((a, b) => a.localeCompare(b))
+        ])
+      )
+    };
   },
 
   updateUserPassword: async (email: string, passwordHash: string): Promise<IUser | null> => {
@@ -919,6 +1194,25 @@ export const dbActions = {
     };
     saveToDisk();
     return diskDb.users[userIndex];
+  },
+
+  deleteUser: async (email: string): Promise<boolean> => {
+    const emailKey = email.toLowerCase().trim();
+    if (isMongoConnected) {
+      const result = await UserModel.updateOne(
+        { email: emailKey, isDeleted: { $ne: true } },
+        { $set: { isDeleted: true } }
+      );
+      return result.modifiedCount > 0;
+    }
+
+    const userIndex = diskDb.users.findIndex(
+      user => user.email.toLowerCase().trim() === emailKey && !user.isDeleted
+    );
+    if (userIndex === -1) return false;
+    diskDb.users[userIndex] = { ...diskDb.users[userIndex], isDeleted: true };
+    saveToDisk();
+    return true;
   },
 
   // --- DEPARTMENTS SECTION ---
@@ -1010,6 +1304,27 @@ export const dbActions = {
     return diskDb.tickets[idx];
   },
 
+  resetTickets: async (): Promise<{ deletedTickets: number; deletedEmails: number }> => {
+    if (isMongoConnected) {
+      const [ticketResult, emailResult] = await Promise.all([
+        TicketModel.deleteMany({}),
+        EmailModel.deleteMany({})
+      ]);
+
+      return {
+        deletedTickets: ticketResult.deletedCount || 0,
+        deletedEmails: emailResult.deletedCount || 0
+      };
+    }
+
+    const deletedTickets = diskDb.tickets.length;
+    const deletedEmails = diskDb.emails.length;
+    diskDb.tickets = [];
+    diskDb.emails = [];
+    saveToDisk();
+    return { deletedTickets, deletedEmails };
+  },
+
   // --- EMAILS SECTION ---
   getEmails: async (): Promise<ISentEmail[]> => {
     if (isMongoConnected) {
@@ -1026,6 +1341,213 @@ export const dbActions = {
     diskDb.emails.unshift(email);
     saveToDisk();
     return email;
+  },
+
+  findTicketById: async (ticketId: string): Promise<ITicket | null> => {
+    if (isMongoConnected) return await TicketModel.findOne({ id: ticketId }).lean();
+    return diskDb.tickets.find(ticket => ticket.id === ticketId) || null;
+  },
+
+  listApiClients: async (): Promise<IApiClient[]> => {
+    if (isMongoConnected) return await ApiClientModel.find({}).select('+keyHash').sort({ createdAt: -1 }).lean();
+    return [...(diskDb.apiClients || [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  findApiClientByPrefix: async (keyPrefix: string): Promise<IApiClient | null> => {
+    if (isMongoConnected) return await ApiClientModel.findOne({ keyPrefix }).select('+keyHash').lean();
+    return (diskDb.apiClients || []).find(client => client.keyPrefix === keyPrefix) || null;
+  },
+  createApiClient: async (client: IApiClient): Promise<IApiClient> => {
+    if (isMongoConnected) return (await ApiClientModel.create(client)).toObject();
+    diskDb.apiClients = diskDb.apiClients || [];
+    diskDb.apiClients.push(client);
+    saveToDisk();
+    return client;
+  },
+  updateApiClient: async (id: string, updates: Partial<IApiClient>): Promise<IApiClient | null> => {
+    if (isMongoConnected) return await ApiClientModel.findOneAndUpdate({ id }, { $set: updates }, { new: true }).select('+keyHash').lean();
+    diskDb.apiClients = diskDb.apiClients || [];
+    const index = diskDb.apiClients.findIndex(client => client.id === id);
+    if (index === -1) return null;
+    diskDb.apiClients[index] = { ...diskDb.apiClients[index], ...updates };
+    saveToDisk();
+    return diskDb.apiClients[index];
+  },
+  findIdempotency: async (clientId: string, key: string): Promise<IIdempotencyRecord | null> => {
+    if (isMongoConnected) return await IdempotencyModel.findOne({ integrationClientId: clientId, idempotencyKey: key }).lean();
+    return (diskDb.idempotencyRecords || []).find(record => record.integrationClientId === clientId && record.idempotencyKey === key) || null;
+  },
+  createIdempotency: async (record: IIdempotencyRecord): Promise<IIdempotencyRecord> => {
+    if (isMongoConnected) return (await IdempotencyModel.create(record)).toObject();
+    diskDb.idempotencyRecords = diskDb.idempotencyRecords || [];
+    if (diskDb.idempotencyRecords.some(item => item.integrationClientId === record.integrationClientId && item.idempotencyKey === record.idempotencyKey)) {
+      throw new Error('IDEMPOTENCY_CONFLICT');
+    }
+    diskDb.idempotencyRecords.push(record);
+    saveToDisk();
+    return record;
+  },
+  createApiAuditEvent: async (event: IApiAuditEvent): Promise<IApiAuditEvent> => {
+    if (isMongoConnected) return (await ApiAuditModel.create(event)).toObject();
+    diskDb.apiAuditEvents = diskDb.apiAuditEvents || [];
+    diskDb.apiAuditEvents.push(event);
+    saveToDisk();
+    return event;
+  },
+
+  getEmailTicketSettings: async (): Promise<IEmailTicketSettings> => {
+    const defaults: IEmailTicketSettings = {
+      id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
+      defaultAssigneeEmail: 'operation_support@kisansuvidha.com', updatedAt: '', updatedBy: 'system'
+    };
+    if (isMongoConnected) {
+      const settings = await EmailTicketSettingsModel.findOne({ id: 'email-ticket' }).lean();
+      return settings ? { ...defaults, ...settings } : defaults;
+    }
+    return { ...defaults, ...(diskDb.emailTicketSettings || {}) };
+  },
+  saveEmailTicketSettings: async (settings: IEmailTicketSettings): Promise<IEmailTicketSettings> => {
+    const normalized = {
+      ...settings,
+      id: 'email-ticket' as const,
+      subjectPrefix: settings.subjectPrefix.trim(),
+      defaultAssigneeEmail: settings.defaultAssigneeEmail.toLowerCase().trim()
+    };
+    if (isMongoConnected) {
+      return await EmailTicketSettingsModel.findOneAndUpdate(
+        { id: 'email-ticket' }, { $set: normalized }, { new: true, upsert: true, setDefaultsOnInsert: true }
+      ).lean();
+    }
+    diskDb.emailTicketSettings = normalized;
+    saveToDisk();
+    return normalized;
+  },
+  reserveInboundEmailEvent: async (event: IInboundEmailEvent): Promise<IInboundEmailEvent> => {
+    const normalized = { ...event, messageId: event.messageId.toLowerCase().trim() };
+    if (isMongoConnected) return (await InboundEmailEventModel.create(normalized)).toObject();
+    diskDb.inboundEmailEvents = diskDb.inboundEmailEvents || [];
+    if (diskDb.inboundEmailEvents.some(item => item.messageId === normalized.messageId)) {
+      throw new Error('INBOUND_EMAIL_DUPLICATE');
+    }
+    diskDb.inboundEmailEvents.unshift(normalized);
+    saveToDisk();
+    return normalized;
+  },
+  updateInboundEmailEvent: async (messageId: string, updates: Partial<IInboundEmailEvent>): Promise<IInboundEmailEvent | null> => {
+    const normalizedId = messageId.toLowerCase().trim();
+    if (isMongoConnected) return await InboundEmailEventModel.findOneAndUpdate(
+      { messageId: normalizedId }, { $set: updates }, { new: true }
+    ).lean();
+    diskDb.inboundEmailEvents = diskDb.inboundEmailEvents || [];
+    const index = diskDb.inboundEmailEvents.findIndex(item => item.messageId === normalizedId);
+    if (index === -1) return null;
+    diskDb.inboundEmailEvents[index] = { ...diskDb.inboundEmailEvents[index], ...updates };
+    saveToDisk();
+    return diskDb.inboundEmailEvents[index];
+  },
+  listInboundEmailEvents: async (limit = 100): Promise<IInboundEmailEvent[]> => {
+    const safeLimit = Math.min(500, Math.max(1, limit));
+    if (isMongoConnected) return await InboundEmailEventModel.find({}).sort({ receivedAt: -1 }).limit(safeLimit).lean();
+    return [...(diskDb.inboundEmailEvents || [])]
+      .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
+      .slice(0, safeLimit);
+  },
+  listGmailIntegrationCredentials: async (): Promise<IGmailIntegrationCredential[]> => {
+    if (isMongoConnected) {
+      const credentials = await GmailIntegrationCredentialModel.find({}).select('+encryptedRefreshToken').lean();
+      return credentials.map((credential: IGmailIntegrationCredential) => ({ ...credential, userEmail: credential.userEmail || credential.email }));
+    }
+    return (diskDb.gmailIntegrationCredentials || []).map((credential) => ({ ...credential, userEmail: credential.userEmail || credential.email }));
+  },
+  saveGmailIntegrationCredential: async (credential: IGmailIntegrationCredential): Promise<IGmailIntegrationCredential> => {
+    if (isMongoConnected) return await GmailIntegrationCredentialModel.findOneAndUpdate(
+      { $or: [{ id: credential.id }, { email: credential.email }] }, { $set: credential }, { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).select('+encryptedRefreshToken').lean();
+    diskDb.gmailIntegrationCredentials = diskDb.gmailIntegrationCredentials || [];
+    const index = diskDb.gmailIntegrationCredentials.findIndex((item) => item.id === credential.id || item.email === credential.email);
+    if (index === -1) diskDb.gmailIntegrationCredentials.push(credential);
+    else diskDb.gmailIntegrationCredentials[index] = credential;
+    saveToDisk();
+    return credential;
+  },
+  deleteGmailIntegrationCredential: async (id: string): Promise<void> => {
+    if (isMongoConnected) { await GmailIntegrationCredentialModel.deleteOne({ id }); return; }
+    diskDb.gmailIntegrationCredentials = (diskDb.gmailIntegrationCredentials || []).filter((item) => item.id !== id);
+    saveToDisk();
+  },
+
+  // --- ESCALATION RULES SECTION ---
+  getEscalationRules: async (): Promise<IEscalationRule[]> => {
+    if (isMongoConnected) {
+      const existingRules = await EscalationRuleModel.find({}).lean();
+      const departments = await dbActions.getDepartments();
+      const users = await dbActions.getUsers();
+      const inferredRules = inferEscalationRules(users, departments);
+
+      for (const inferredRule of inferredRules) {
+        const existingRule = existingRules.find((rule) => rule.departmentId === inferredRule.departmentId);
+        if (!existingRule) {
+          await EscalationRuleModel.updateOne(
+            { departmentId: inferredRule.departmentId },
+            {
+              $set: {
+                departmentName: inferredRule.departmentName,
+                designationLevels: inferredRule.designationLevels,
+                updatedAt: inferredRule.updatedAt
+              },
+              $setOnInsert: {
+                id: inferredRule.id,
+                createdAt: inferredRule.createdAt
+              }
+            },
+            { upsert: true }
+          );
+        }
+      }
+
+      return await EscalationRuleModel.find({}).sort({ departmentName: 1 }).lean();
+    }
+    const existingRules = loadEscalationRulesFromDisk();
+    const inferredRules = inferEscalationRules(diskDb.users, diskDb.departments);
+    const mergedRules = [...existingRules];
+    let rulesChanged = false;
+
+    for (const inferredRule of inferredRules) {
+      if (!mergedRules.some((rule) => rule.departmentId === inferredRule.departmentId)) {
+        mergedRules.push(inferredRule);
+        rulesChanged = true;
+      }
+    }
+
+    if (rulesChanged) {
+      saveEscalationRulesToDisk(mergedRules);
+    }
+    return mergedRules.sort((a, b) => a.departmentName.localeCompare(b.departmentName));
+  },
+
+  upsertEscalationRule: async (rule: IEscalationRule): Promise<IEscalationRule> => {
+    if (isMongoConnected) {
+      const { id, createdAt, ...updatableFields } = rule;
+      await EscalationRuleModel.updateOne(
+        { departmentId: rule.departmentId },
+        { $set: updatableFields, $setOnInsert: { id, createdAt } },
+        { upsert: true }
+      );
+      const saved = await EscalationRuleModel.findOne({ departmentId: rule.departmentId }).lean();
+      return saved;
+    }
+
+    const rules = loadEscalationRulesFromDisk();
+    const index = rules.findIndex((item) => item.departmentId === rule.departmentId);
+    if (index === -1) {
+      rules.push(rule);
+    } else {
+      rules[index] = {
+        ...rules[index],
+        ...rule
+      };
+    }
+    saveEscalationRulesToDisk(rules);
+    return rules.find((item) => item.departmentId === rule.departmentId)!;
   },
 
   // Manual Triggered Full Migration/Transfer method from JSON Disk fallback to MongoDB
