@@ -472,7 +472,7 @@ export default function EmployeeTicketInsights({
                               </div>
                               <p className="text-[11px] text-gray-500 break-words">{ticket.description}</p>
                               <p className="text-[10px] text-gray-400">
-                                {ticket.departmentName} • {ticket.categoryName} • Created {formatDateTime(ticket.createdAt)}
+                                {ticket.departmentName} • Created {formatDateTime(ticket.createdAt)}
                               </p>
                             </div>
 
@@ -665,7 +665,7 @@ export default function EmployeeTicketInsights({
                             <span className="text-xs font-semibold text-gray-800">{ticket.title}</span>
                           </div>
                           <p className="text-[11px] text-gray-500 break-words">{ticket.description}</p>
-                          <p className="text-[10px] text-gray-400">Raised by {ticket.creatorName} • {ticket.departmentName} • {ticket.categoryName}</p>
+                          <p className="text-[10px] text-gray-400">Raised by {ticket.creatorName} • {ticket.departmentName}</p>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">

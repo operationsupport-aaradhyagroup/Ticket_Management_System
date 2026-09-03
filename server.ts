@@ -1823,6 +1823,7 @@ app.get('/cron', async (req, res) => {
       const isAdminUser = req.user?.role === 'Admin';
       const actorEmail = req.user?.email?.toLowerCase() || '';
       const actorName = req.user?.name?.trim().toLowerCase() || '';
+      const isTicketCreator = !!actorEmail && existingTicket.creatorEmail.toLowerCase() === actorEmail;
       const assignedAgentNameNormalized = (existingTicket.assignedAgent || '').trim().toLowerCase();
       const assignedAgentEmailNormalized = (existingTicket.assignedAgentEmail || '').trim().toLowerCase();
       const isAssignedUser =
@@ -1834,6 +1835,12 @@ app.get('/cron', async (req, res) => {
         const dueDateChanged = slaDueDate !== undefined && slaDueDate !== existingTicket.slaDueDate;
         const forbiddenChanges: string[] = [];
 
+        if (isTicketCreator && status !== undefined && status !== existingTicket.status) {
+          forbiddenChanges.push('ticket status');
+        }
+        if (isTicketCreator && priority !== undefined && priority !== existingTicket.priority) {
+          forbiddenChanges.push('priority');
+        }
         if (assignedAgent !== undefined && assignedAgent !== existingTicket.assignedAgent) {
           forbiddenChanges.push('assignment');
         }
@@ -1858,7 +1865,7 @@ app.get('/cron', async (req, res) => {
 
         if (forbiddenChanges.length > 0) {
           res.status(403).json({
-            error: `You are not allowed to change: ${forbiddenChanges.join(', ')}. Only the assigned user can update due date, and only admins can change assignment, escalation, or SLA configuration.`
+            error: `You are not allowed to change: ${forbiddenChanges.join(', ')}. Ticket creators cannot change status or priority; only the assigned user can update due date, and only admins can change assignment, escalation, or SLA configuration.`
           });
           return;
         }

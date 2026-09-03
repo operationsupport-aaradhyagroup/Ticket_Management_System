@@ -100,6 +100,8 @@ export default function TicketDetailView({
     return localRemarks;
   }, [localRemarks]);
 
+  const isTicketCreator = currentUser.email.toLowerCase() === ticket.creatorEmail.toLowerCase();
+
   const canEditDueDate = useMemo(() => {
     const currentEmail = currentUser.email.toLowerCase();
     const assignedEmail = (ticket.assignedAgentEmail || '').toLowerCase();
@@ -308,9 +310,6 @@ export default function TicketDetailView({
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-0.5 text-xs font-semibold bg-blue-50 text-blue-700 rounded-md">
                 {ticket.departmentName}
-              </span>
-              <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-md">
-                {ticket.categoryName === 'Manual Entry' ? 'Operational Desk Controls' : ticket.categoryName}
               </span>
               <span className={`px-2.5 py-0.5 text-xs font-bold rounded-md ${
                 ticket.priority === 'Critical' ? 'bg-red-100 text-red-800' :
@@ -603,14 +602,15 @@ export default function TicketDetailView({
                   id="select-ticket-status"
                   value={ticketStatus}
                   onChange={(e) => setTicketStatus(e.target.value as TicketStatus)}
-                  className="w-full text-xs font-medium border border-gray-200 rounded-lg p-2.5 bg-white focus:border-blue-500"
+                  disabled={isTicketCreator}
+                  className="w-full text-xs font-medium border border-gray-200 rounded-lg p-2.5 bg-white focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
                 >
                   <option value="Open">🟢 Open</option>
                   <option value="In Progress">🔵 In Progress</option>
                   <option value="Resolved">✅ Resolved</option>
                   <option value="Closed">🔒 Closed</option>
                 </select>
-                <p className="text-[10px] text-gray-400 mt-1">Transitioning to Resolved stops the SLA clock permanently.</p>
+                <p className="text-[10px] text-gray-400 mt-1">{isTicketCreator ? 'Ticket creators cannot change status or priority.' : 'Transitioning to Resolved stops the SLA clock permanently.'}</p>
               </div>
 
               {/* Priority Select */}
@@ -620,7 +620,8 @@ export default function TicketDetailView({
                   id="select-ticket-priority"
                   value={ticketPriority}
                   onChange={(e) => setTicketPriority(e.target.value as TicketPriority)}
-                  className="w-full text-xs font-medium border border-gray-200 rounded-lg p-2.5 bg-white focus:border-blue-500"
+                  disabled={isTicketCreator}
+                  className="w-full text-xs font-medium border border-gray-200 rounded-lg p-2.5 bg-white focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
                 >
                   <option value="Low">Low Priority</option>
                   <option value="Medium">Medium Priority</option>

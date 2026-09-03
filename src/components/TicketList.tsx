@@ -1,12 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { Ticket, Department, ComplaintCategory, TicketStatus, SLAStatus, TicketPriority } from '../types';
+import { Ticket, Department, TicketStatus, SLAStatus, TicketPriority } from '../types';
 import { formatSLACountdown, computeSLAStatus, formatDateTime } from '../utils';
 import { Search, Filter, RefreshCw, AlertCircle, Clock, CheckCircle2, User, Play, ChevronRight } from 'lucide-react';
 
 interface TicketListProps {
   tickets: Ticket[];
   departments: Department[];
-  categories: ComplaintCategory[];
   referenceTime: Date;
   onSelectTicket: (ticket: Ticket) => void;
   onOpenCreateTicket: () => void;
@@ -15,28 +14,18 @@ interface TicketListProps {
 export default function TicketList({
   tickets,
   departments,
-  categories,
   referenceTime,
   onSelectTicket,
   onOpenCreateTicket
 }: TicketListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDeptId, setSelectedDeptId] = useState<string>('all');
-  const [selectedCatId, setSelectedCatId] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedSlaStatus, setSelectedSlaStatus] = useState<string>('all');
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
 
-  // Load categories matching selected department
-  const filteredCategoryOptions = useMemo(() => {
-    if (selectedDeptId === 'all') return [];
-    return categories.filter(c => c.departmentId === selectedDeptId);
-  }, [categories, selectedDeptId]);
-
-  // Reset category filter if parent department changes
   const handleDeptFilterChange = (deptId: string) => {
     setSelectedDeptId(deptId);
-    setSelectedCatId('all');
   };
 
   // Process filters
@@ -52,27 +41,23 @@ export default function TicketList({
       // 2. Department
       const matchesDept = selectedDeptId === 'all' || t.departmentId === selectedDeptId;
 
-      // 3. Category
-      const matchesCat = selectedCatId === 'all' || t.categoryId === selectedCatId;
-
-      // 4. Ticket Status
+      // 3. Ticket Status
       const matchesStatus = selectedStatus === 'all' || t.status === selectedStatus;
 
-      // 5. Priority
+      // 4. Priority
       const matchesPriority = selectedPriority === 'all' || t.priority === selectedPriority;
 
-      // 6. SLA Status (requires dynamic status computation)
+      // 5. SLA Status (requires dynamic status computation)
       const compStatus = computeSLAStatus(t, referenceTime);
       const matchesSla = selectedSlaStatus === 'all' || compStatus === selectedSlaStatus;
 
-      return matchesSearch && matchesDept && matchesCat && matchesStatus && matchesPriority && matchesSla;
+      return matchesSearch && matchesDept && matchesStatus && matchesPriority && matchesSla;
     });
-  }, [tickets, searchTerm, selectedDeptId, selectedCatId, selectedStatus, selectedPriority, selectedSlaStatus, referenceTime]);
+  }, [tickets, searchTerm, selectedDeptId, selectedStatus, selectedPriority, selectedSlaStatus, referenceTime]);
 
   const clearFilters = () => {
     setSearchTerm('');
     setSelectedDeptId('all');
-    setSelectedCatId('all');
     setSelectedStatus('all');
     setSelectedSlaStatus('all');
     setSelectedPriority('all');
@@ -165,7 +150,7 @@ export default function TicketList({
       </div>
 
       {/* Advanced Filter row */}
-      <div className="p-4 bg-white border-b border-gray-50 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+      <div className="p-4 bg-white border-b border-gray-50 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         {/* Department */}
         <div>
           <label className="block text-[11px] font-medium text-gray-400 uppercase tracking-widest mb-1">Department</label>
@@ -178,25 +163,6 @@ export default function TicketList({
             <option value="all">All Departments</option>
             {departments.map(d => (
               <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Dynamic Category - only clickable if Dept selected */}
-        <div>
-          <label className="block text-[11px] font-medium text-gray-400 uppercase tracking-widest mb-1">Complaint Category</label>
-          <select
-            id="filter-category"
-            value={selectedCatId}
-            disabled={selectedDeptId === 'all'}
-            onChange={(e) => setSelectedCatId(e.target.value)}
-            className="w-full text-xs border border-gray-200 rounded-lg p-1.5 focus:outline-hidden focus:border-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-400"
-          >
-            <option value="all">
-              {selectedDeptId === 'all' ? 'Select Dept First' : 'All Categories'}
-            </option>
-            {filteredCategoryOptions.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
         </div>
@@ -304,7 +270,6 @@ export default function TicketList({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div className="space-y-1">
                     <p className="font-medium text-gray-700">{t.departmentName}</p>
-                    <p className="text-[11px] text-gray-400 font-mono tracking-tight break-words">{t.categoryName}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md border ${getPriorityBadgeClass(t.priority)}`}>
@@ -342,7 +307,7 @@ export default function TicketList({
           <thead>
             <tr className="bg-gray-50/75 text-xs text-gray-400 font-semibold uppercase tracking-widest border-b border-gray-100">
               <th className="py-3 px-5">Ticket Info</th>
-              <th className="py-3 px-5">Department & Category</th>
+              <th className="py-3 px-5">Department</th>
               <th className="py-3 px-5">Priority & Status</th>
               <th className="py-3 px-5">SLA Information</th>
               <th className="py-3 px-5 text-right">Actions</th>
@@ -398,11 +363,10 @@ export default function TicketList({
                       </div>
                     </td>
 
-                    {/* DEPT & CAT */}
+                  {/* DEPARTMENT */}
                     <td className="py-4 px-5">
                       <div className="space-y-0.5">
                         <p className="text-xs font-medium text-gray-700">{t.departmentName}</p>
-                        <p className="text-[11px] text-gray-400 font-mono tracking-tight">{t.categoryName}</p>
                       </div>
                     </td>
 

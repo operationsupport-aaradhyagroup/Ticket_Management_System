@@ -954,7 +954,6 @@ export default function App() {
               <TicketList
                 tickets={visibleTickets}
                 departments={departments}
-                categories={categories}
                 referenceTime={referenceTime}
                 onSelectTicket={(t) => setSelectedTicketId(t.id)}
                 onOpenCreateTicket={() => setIsCreateModalOpen(true)}
