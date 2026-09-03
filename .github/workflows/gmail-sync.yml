@@ -1,0 +1,24 @@
+name: Sync Gmail inbox
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: gmail-inbox-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger TMS Gmail sync
+        env:
+          TMS_BASE_URL: https://ticket-management-system-1bqt.onrender.com
+          GMAIL_SYNC_SECRET: ${{ secrets.GMAIL_SYNC_SECRET }}
+        run: |
+          test -n "$GMAIL_SYNC_SECRET"
+          curl --fail-with-body --retry 2 --retry-delay 5 \
+            --request POST "$TMS_BASE_URL/api/admin/integrations/gmail/sync" \
+            --header "Authorization: Bearer $GMAIL_SYNC_SECRET"
