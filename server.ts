@@ -117,10 +117,16 @@ const writeTicketSequence = (value: number) => {
 let ticketSequenceQueue = Promise.resolve();
 const getNextTicketId = async () => {
   let ticketId = '';
-  ticketSequenceQueue = ticketSequenceQueue.then(() => {
-  const nextTicketNumber = readTicketSequence() + 1;
-  writeTicketSequence(nextTicketNumber);
-    ticketId = `TKT-${new Date().getFullYear()}-${String(nextTicketNumber).padStart(6, '0')}`;
+  ticketSequenceQueue = ticketSequenceQueue.then(async () => {
+    const year = new Date().getFullYear();
+    const ticketPattern = new RegExp(`^TKT-${year}-(\\d+)$`);
+    const storedHighestNumber = (await dbActions.getTickets()).reduce((highest, ticket) => {
+      const match = ticket.id.match(ticketPattern);
+      return match ? Math.max(highest, Number(match[1])) : highest;
+    }, 0);
+    const nextTicketNumber = Math.max(readTicketSequence(), storedHighestNumber) + 1;
+    writeTicketSequence(nextTicketNumber);
+    ticketId = `TKT-${year}-${String(nextTicketNumber).padStart(6, '0')}`;
   });
   await ticketSequenceQueue;
   return ticketId;
