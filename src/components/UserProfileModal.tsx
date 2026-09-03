@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Building2, Briefcase, IdCard, KeyRound, Mail, Shield, User2, Users, X } from 'lucide-react';
 import { UserSession } from '../types';
 
 interface UserProfileModalProps {
   isOpen: boolean;
   user: UserSession | null;
+  companyUsers: UserSession[];
   token: string | null;
   onClose: () => void;
+  onProfileUpdated: (user: UserSession) => void;
 }
 
 const profileFields = (user: UserSession | null) => {
@@ -25,13 +27,26 @@ const profileFields = (user: UserSession | null) => {
   ];
 };
 
-export default function UserProfileModal({ isOpen, user, token, onClose }: UserProfileModalProps) {
+export default function UserProfileModal({ isOpen, user, companyUsers, token, onClose, onProfileUpdated }: UserProfileModalProps) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [designation, setDesignation] = useState('');
+  const [reportingManagerEmail, setReportingManagerEmail] = useState('');
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !user) return;
+    setDesignation(user.designation || '');
+    setReportingManagerEmail(user.reportingManagerEmail || '');
+    setProfileError(null);
+    setProfileSuccess(null);
+  }, [isOpen, user]);
 
   if (!isOpen || !user) return null;
 
@@ -83,6 +98,39 @@ export default function UserProfileModal({ isOpen, user, token, onClose }: UserP
     }
   };
 
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) {
+      setProfileError('Your session has expired. Please sign in again.');
+      return;
+    }
+
+    setProfileError(null);
+    setProfileSuccess(null);
+    setIsSavingProfile(true);
+    try {
+      const response = await fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ designation, reportingManagerEmail })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to update profile.');
+
+      onProfileUpdated(data.user);
+      setProfileSuccess(data.message || 'Escalation profile updated successfully.');
+    } catch (error: any) {
+      setProfileError(error.message || 'Unable to update profile.');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const reportingManagers = companyUsers.filter((candidate) => candidate.email.toLowerCase() !== user.email.toLowerCase());
+
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 px-3 sm:px-4 backdrop-blur-sm">
       <div className="absolute inset-0" onClick={onClose} />
@@ -120,6 +168,50 @@ export default function UserProfileModal({ isOpen, user, token, onClose }: UserP
                 <div className="break-words text-sm font-semibold text-slate-800">{value}</div>
               </div>
             ))}
+          </div>
+
+          <div className="mt-5 rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+            <div className="mb-1 flex items-center gap-2 text-sm font-bold text-slate-800">
+              <Users className="h-4 w-4 text-blue-600" />
+              <span>Escalation Profile</span>
+            </div>
+            <p className="mb-4 text-xs text-slate-500">Your designation and reporting manager determine escalation routing.</p>
+
+            {profileError && <div className="mb-3 rounded-xl border border-rose-100 bg-rose-50 px-3.5 py-2.5 text-xs text-rose-700">{profileError}</div>}
+            {profileSuccess && <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3.5 py-2.5 text-xs text-emerald-700">{profileSuccess}</div>}
+
+            <form onSubmit={handleUpdateProfile} className="space-y-3">
+              <div>
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Designation</label>
+                <input
+                  value={designation}
+                  onChange={(e) => setDesignation(e.target.value)}
+                  required
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  placeholder="Enter your designation"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Reporting Manager</label>
+                <select
+                  value={reportingManagerEmail}
+                  onChange={(e) => setReportingManagerEmail(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">No reporting manager</option>
+                  {reportingManagers.map((candidate) => (
+                    <option key={candidate.email} value={candidate.email}>{candidate.name} ({candidate.email})</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={isSavingProfile}
+                className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+              >
+                {isSavingProfile ? 'Saving...' : 'Save Escalation Profile'}
+              </button>
+            </form>
           </div>
 
           <div className="mt-5 rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">

@@ -1196,6 +1196,27 @@ export const dbActions = {
     return diskDb.users[userIndex];
   },
 
+  updateUserProfile: async (
+    email: string,
+    profile: Pick<IUser, 'designation' | 'reportingManager' | 'reportingManagerEmail'>
+  ): Promise<IUser | null> => {
+    const emailKey = email.toLowerCase().trim();
+    if (isMongoConnected) {
+      return await UserModel.findOneAndUpdate(
+        { email: emailKey, isDeleted: { $ne: true } },
+        { $set: profile },
+        { new: true }
+      ).lean();
+    }
+
+    const userIndex = diskDb.users.findIndex((user) => user.email.toLowerCase().trim() === emailKey && !user.isDeleted);
+    if (userIndex === -1) return null;
+
+    diskDb.users[userIndex] = { ...diskDb.users[userIndex], ...profile };
+    saveToDisk();
+    return diskDb.users[userIndex];
+  },
+
   deleteUser: async (email: string): Promise<boolean> => {
     const emailKey = email.toLowerCase().trim();
     if (isMongoConnected) {

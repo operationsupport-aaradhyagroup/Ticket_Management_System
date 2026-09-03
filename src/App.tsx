@@ -1017,7 +1017,12 @@ export default function App() {
       <UserProfileModal
         isOpen={isProfileModalOpen}
         user={profileUser}
+        companyUsers={companyUsers}
         token={token}
+        onProfileUpdated={(updatedUser) => {
+          setCurrentUser(updatedUser);
+          setCompanyUsers((users) => users.map((user) => user.email.toLowerCase() === updatedUser.email.toLowerCase() ? updatedUser : user));
+        }}
         onClose={() => setIsProfileModalOpen(false)}
       />
 

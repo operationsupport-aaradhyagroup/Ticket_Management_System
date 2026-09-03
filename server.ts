@@ -941,6 +941,45 @@ app.get('/cron', async (req, res) => {
     res.json({ user: req.user });
   });
 
+  app.put('/api/auth/profile', authenticateToken, async (req, res) => {
+    try {
+      const designation = String(req.body.designation || '').trim();
+      const reportingManagerEmail = String(req.body.reportingManagerEmail || '').toLowerCase().trim();
+
+      if (!designation) {
+        res.status(400).json({ error: 'Designation is required.' });
+        return;
+      }
+
+      let reportingManager: IUser | null = null;
+      if (reportingManagerEmail) {
+        if (reportingManagerEmail === req.user!.email.toLowerCase()) {
+          res.status(400).json({ error: 'You cannot select yourself as reporting manager.' });
+          return;
+        }
+        reportingManager = await dbActions.findUserByEmail(reportingManagerEmail);
+        if (!reportingManager) {
+          res.status(400).json({ error: 'Select an active TMS user as reporting manager.' });
+          return;
+        }
+      }
+
+      const updated = await dbActions.updateUserProfile(req.user!.email, {
+        designation,
+        reportingManager: reportingManager?.name || '',
+        reportingManagerEmail: reportingManager?.email || ''
+      });
+      if (!updated) {
+        res.status(404).json({ error: 'User account not found.' });
+        return;
+      }
+
+      res.json({ message: 'Escalation profile updated successfully.', user: sanitizeUser(updated) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Profile update failed.' });
+    }
+  });
+
   app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
     try {
       const { currentPassword, newPassword, confirmPassword } = req.body;
