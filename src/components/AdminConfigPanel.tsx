@@ -212,6 +212,7 @@ export default function AdminConfigPanel({
     type: 'success' | 'error';
     message: string;
   } | null>(null);
+  const [activeSettingsSection, setActiveSettingsSection] = useState<'organization' | 'employees' | 'escalation' | 'system'>('organization');
 
   const handleMigrate = async () => {
     setMigrating(true);
@@ -372,6 +373,13 @@ export default function AdminConfigPanel({
     return Array.from(options).sort((a, b) => a.localeCompare(b));
   }, [companyUsers, employeeOptions.designationsByDepartmentId, isCustomDesignation, userForm.departmentId, userForm.designation]);
 
+  const reportingManagerOptions = useMemo(
+    () => companyUsers
+      .filter((user) => user.email)
+      .sort((firstUser, secondUser) => firstUser.name.localeCompare(secondUser.name)),
+    [companyUsers]
+  );
+
   const handleCreateDept = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDeptName.trim()) return;
@@ -403,11 +411,14 @@ export default function AdminConfigPanel({
       !userForm.email.trim() ||
       !userForm.employeeId.trim() ||
       !userForm.departmentId ||
-      !userForm.designation.trim()
+      !userForm.designation.trim() ||
+      !userForm.reportingManager.trim() ||
+      !userForm.reportingManagerEmail.trim() ||
+      !userForm.password.trim()
     ) {
       setCreateUserStatus({
         type: 'error',
-        message: 'First name, last name, email, employee ID, department, and designation are required.'
+        message: 'First name, last name, email, employee ID, department, designation, reporting manager, manager email, and password are required.'
       });
       return;
     }
@@ -437,7 +448,7 @@ export default function AdminConfigPanel({
 
       setCreateUserStatus({
         type: 'success',
-        message: `${result.user?.name || 'Employee'} account created successfully. Default password is employee ID unless a custom password was entered.`
+        message: `${result.user?.name || 'Employee'} account created successfully.`
       });
       setUserForm((prev) => ({
         ...prev,
@@ -589,13 +600,57 @@ export default function AdminConfigPanel({
   };
 
   return (
-    <>
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div className="settings-shell grid grid-cols-1 gap-6 xl:grid-cols-[290px_minmax(0,1fr)]" data-active-section={activeSettingsSection}>
+      <style>{`
+        .settings-shell[data-active-section='organization'] .settings-section:not([data-settings-section='organization']),
+        .settings-shell[data-active-section='employees'] .settings-section:not([data-settings-section='employees']),
+        .settings-shell[data-active-section='escalation'] .settings-section:not([data-settings-section='escalation']),
+        .settings-shell[data-active-section='system'] .settings-section:not([data-settings-section='system']) { display: none; }
+        @media (min-width: 768px) {
+          .settings-shell[data-active-section='escalation'] .settings-left-column { display: none; }
+          .settings-shell[data-active-section='escalation'] .settings-right-column { grid-column: 1 / -1; }
+          .settings-shell[data-active-section='system'] .settings-left-column { grid-column: 1 / -1; }
+        }
+      `}</style>
+      <aside className="h-fit rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.06)] xl:sticky xl:top-5">
+        <div className="border-b border-slate-100 px-2 pb-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Admin Portal</p>
+          <h2 className="mt-1 whitespace-nowrap text-base font-black text-slate-900">Settings &amp; Management</h2>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">Select a block to show its settings.</p>
+        </div>
+        <nav className="mt-3 grid gap-1.5" aria-label="Settings sections">
+          {[
+            { id: 'organization', label: 'Organization & SLA', description: 'Departments and SLA rules', icon: Landmark },
+            { id: 'employees', label: 'Employees', description: 'Accounts and password reset', icon: UserPlus },
+            { id: 'escalation', label: 'Escalation', description: 'Designation routing ladder', icon: GitBranch },
+            { id: 'system', label: 'System Controls', description: 'Ticket maintenance tools', icon: Database }
+          ].map(({ id, label, description, icon: Icon }) => {
+            const isActive = activeSettingsSection === id;
+            return <button key={id} type="button" onClick={() => setActiveSettingsSection(id as typeof activeSettingsSection)} className={`flex items-start gap-3 rounded-2xl px-3 py-3 text-left transition ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'}`}>
+              <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? 'text-white' : 'text-blue-600'}`} />
+              <span><span className="block text-sm font-bold">{label}</span><span className={`mt-0.5 block text-[11px] ${isActive ? 'text-blue-50' : 'text-slate-400'}`}>{description}</span></span>
+            </button>;
+          })}
+        </nav>
+      </aside>
+      <div className="min-w-0">
+        <div className="mb-5 rounded-[24px] border border-slate-200 bg-white px-5 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.04)]">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">Settings &amp; Management</p>
+          <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <h3 className="text-xl font-black text-slate-900">
+              {activeSettingsSection === 'organization' ? 'Organization & SLA' : activeSettingsSection === 'employees' ? 'Employee Management' : activeSettingsSection === 'escalation' ? 'Escalation Workflow' : 'System Controls'}
+            </h3>
+            <p className="text-xs text-slate-500">
+              {activeSettingsSection === 'organization' ? 'Manage departments and response rules.' : activeSettingsSection === 'employees' ? 'Manage employee accounts and access.' : activeSettingsSection === 'escalation' ? 'Configure designation-based routing.' : 'Run controlled ticket maintenance actions.'}
+            </p>
+          </div>
+        </div>
+    <div className="settings-content-grid grid grid-cols-1 md:grid-cols-3 gap-6">
       
       {/* 1. DEPARTMENTS PANEL & DB SYNC (Left 1/3) */}
-      <div className="space-y-6 md:col-span-1">
+      <div className="settings-left-column space-y-6 md:col-span-1">
         
-        <div className="bg-white p-5 rounded-[26px] border border-slate-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+        <div data-settings-section="organization" className="settings-section bg-white p-5 rounded-[26px] border border-slate-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
           <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100">
             <div className="flex items-center space-x-2">
             <div className="rounded-2xl bg-blue-50 p-2 text-blue-600">
@@ -679,7 +734,7 @@ export default function AdminConfigPanel({
         </div>
       </div>
 
-      <div className="bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+      <div data-settings-section="system" className="settings-section bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
           <div className="rounded-2xl bg-rose-50 p-2 text-rose-600">
             <Trash2 className="w-4.5 h-4.5" />
@@ -812,7 +867,7 @@ export default function AdminConfigPanel({
       </div>
       )}
 
-      <div className="bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+      <div data-settings-section="employees" className="settings-section bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center justify-between gap-3 pb-3 border-b border-gray-50">
           <div>
             <h4 className="text-sm font-bold text-slate-800">Employee Directory</h4>
@@ -866,7 +921,7 @@ export default function AdminConfigPanel({
         </div>
       </div>
 
-      <div className="bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+      <div data-settings-section="employees" className="settings-section bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
           <div className="rounded-2xl bg-indigo-50 p-2 text-indigo-600">
             <KeyRound className="w-4.5 h-4.5" />
@@ -938,8 +993,8 @@ export default function AdminConfigPanel({
       </div>
       </div>
 
-      <div className="md:col-span-2 flex flex-col gap-6">
-      <div className="order-2 bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+      <div className="settings-right-column md:col-span-2 flex flex-col gap-6">
+      <div data-settings-section="employees" className="settings-section order-2 bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
           <div className="rounded-2xl bg-emerald-50 p-2 text-emerald-600">
             <UserPlus className="w-4.5 h-4.5" />
@@ -987,7 +1042,7 @@ export default function AdminConfigPanel({
               <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Employee ID</label>
               <div className="relative">
                 <IdCard className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                <input value={userForm.employeeId} onChange={(e) => handleUserFieldChange('employeeId', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs" />
+                <input required value={userForm.employeeId} onChange={(e) => handleUserFieldChange('employeeId', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs" />
               </div>
             </div>
 
@@ -1049,12 +1104,31 @@ export default function AdminConfigPanel({
 
             <div>
               <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Reporting Manager</label>
-              <input value={userForm.reportingManager} onChange={(e) => handleUserFieldChange('reportingManager', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs" />
+              <select
+                required
+                value={userForm.reportingManagerEmail}
+                onChange={(e) => {
+                  const manager = reportingManagerOptions.find((user) => user.email === e.target.value);
+                  setUserForm((previousForm) => ({
+                    ...previousForm,
+                    reportingManager: manager?.name || '',
+                    reportingManagerEmail: manager?.email || ''
+                  }));
+                }}
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs"
+              >
+                <option value="">Select reporting manager</option>
+                {reportingManagerOptions.map((manager) => (
+                  <option key={manager.email} value={manager.email}>
+                    {manager.name} — {manager.email}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
               <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Manager Email</label>
-              <input type="email" value={userForm.reportingManagerEmail} onChange={(e) => handleUserFieldChange('reportingManagerEmail', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs" />
+              <input required readOnly type="email" value={userForm.reportingManagerEmail} placeholder="Select reporting manager first" className="w-full cursor-not-allowed rounded-xl border border-gray-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-500" />
             </div>
 
             <div>
@@ -1073,8 +1147,8 @@ export default function AdminConfigPanel({
             </div>
 
             <div>
-              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Custom Password (Optional)</label>
-              <input type="text" value={userForm.password} onChange={(e) => handleUserFieldChange('password', e.target.value)} placeholder="Leave blank to use Employee ID" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs" />
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Password</label>
+              <input required type="password" value={userForm.password} onChange={(e) => handleUserFieldChange('password', e.target.value)} placeholder="Set initial password" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs" />
             </div>
           </div>
 
@@ -1171,7 +1245,7 @@ export default function AdminConfigPanel({
       </div>
 
       </>}
-      <div className="order-4 grid grid-cols-1 xl:grid-cols-1 gap-6">
+      <div data-settings-section="escalation" className="settings-section order-4 grid grid-cols-1 xl:grid-cols-1 gap-6">
       <div className="bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
           <div className="rounded-2xl bg-amber-50 p-2 text-amber-600">
@@ -1285,7 +1359,7 @@ export default function AdminConfigPanel({
       </div>
 
       {/* 2. CATEGORIES AND SLA CONFIGURATION (Right 2/3) */}
-      <div className="order-1 bg-white p-5 rounded-[28px] border border-gray-200 shadow-[0_18px_50px_rgba(15,23,42,0.07)] flex flex-col space-y-4">
+      <div data-settings-section="organization" className="settings-section order-1 bg-white p-5 rounded-[28px] border border-gray-200 shadow-[0_18px_50px_rgba(15,23,42,0.07)] flex flex-col space-y-4">
         
         {/* Selected department header */}
         <div className="pb-4 border-b border-gray-100 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
@@ -1456,7 +1530,7 @@ export default function AdminConfigPanel({
       </div>
 
     </div>
-
-    </>
+      </div>
+    </div>
   );
 }

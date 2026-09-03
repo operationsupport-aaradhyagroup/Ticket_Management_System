@@ -1123,14 +1123,28 @@ app.get('/cron', async (req, res) => {
         password
       } = req.body;
 
-      if (!firstName || !lastName || !email || !employeeId || !departmentId || !designation) {
-        res.status(400).json({ error: 'First name, last name, email, employee ID, department, and designation are required.' });
+      const normalizedEmployeeId = String(employeeId || '').trim();
+      const normalizedPassword = String(password || '').trim();
+      const normalizedReportingManager = String(reportingManager || '').trim();
+      const normalizedReportingManagerEmail = String(reportingManagerEmail || '').toLowerCase().trim();
+
+      if (!firstName || !lastName || !email || !normalizedEmployeeId || !departmentId || !designation || !normalizedReportingManager || !normalizedReportingManagerEmail || !normalizedPassword) {
+        res.status(400).json({ error: 'First name, last name, email, employee ID, department, designation, reporting manager, manager email, and password are required.' });
         return;
       }
 
       const existingUser = await dbActions.findUserByEmail(email);
       if (existingUser) {
         res.status(400).json({ error: 'An account with this email already exists.' });
+        return;
+      }
+
+      const employeeIdKey = normalizedEmployeeId.toLowerCase();
+      const existingEmployeeId = (await dbActions.getUsers()).find(
+        (user) => String(user.employeeId || '').trim().toLowerCase() === employeeIdKey
+      );
+      if (existingEmployeeId) {
+        res.status(400).json({ error: 'An account with this employee ID already exists.' });
         return;
       }
 
@@ -1142,14 +1156,8 @@ app.get('/cron', async (req, res) => {
       }
 
       const fullName = `${String(firstName).trim()} ${String(lastName).trim()}`.trim();
-      const defaultPassword = String(password || employeeId).trim();
-      if (!defaultPassword) {
-        res.status(400).json({ error: 'A default password could not be generated for this user.' });
-        return;
-      }
-
       const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash(defaultPassword, salt);
+      const passwordHash = await bcrypt.hash(normalizedPassword, salt);
 
       const newUser: IUser = {
         email: String(email).toLowerCase().trim(),
@@ -1157,14 +1165,14 @@ app.get('/cron', async (req, res) => {
         passwordHash,
         role: role === 'Admin' ? 'Admin' : 'User',
         departmentId: selectedDepartment.id,
-        employeeId: String(employeeId).trim(),
+        employeeId: normalizedEmployeeId,
         firstName: String(firstName).trim(),
         lastName: String(lastName).trim(),
         company: String(company || 'Aaradhya Group').trim(),
         departmentName: selectedDepartment.name,
         designation: String(designation).trim(),
-        reportingManager: String(reportingManager || '').trim(),
-        reportingManagerEmail: String(reportingManagerEmail || '').trim()
+        reportingManager: normalizedReportingManager,
+        reportingManagerEmail: normalizedReportingManagerEmail
       };
 
       const created = await dbActions.createUser(newUser);

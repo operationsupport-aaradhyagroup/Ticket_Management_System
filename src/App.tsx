@@ -881,7 +881,7 @@ export default function App() {
                 }`}
               >
                 <Settings className="w-4 h-4 text-slate-500" />
-                <span>Department & SLA Rules</span>
+                <span>Settings &amp; Management</span>
               </button>
             )}
           </div>
