@@ -103,7 +103,7 @@ export default function TicketDetailView({
     return localRemarks;
   }, [localRemarks]);
 
-  const isTicketCreator = currentUser.email.toLowerCase() === ticket.creatorEmail.toLowerCase();
+  const isTicketCreator = !isAdmin && currentUser.email.toLowerCase() === ticket.creatorEmail.toLowerCase();
 
   const canEditDueDate = useMemo(() => {
     const currentEmail = currentUser.email.toLowerCase();

@@ -271,16 +271,14 @@ const renderTicketEmailLayout = ({
       <td align="center">
         <table role="presentation" width="640" cellspacing="0" cellpadding="0" bgcolor="#ffffff" style="width:640px;max-width:100%;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #cbd5e1;">
           <tr>
-            <td style="background:linear-gradient(135deg,#0f172a,#1d4ed8);padding:28px 32px;color:#ffffff;">
-              <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.8;font-weight:bold;">
+            <td bgcolor="#0f172a" style="background-color:#0f172a;background-image:linear-gradient(135deg,#0f172a,#1d4ed8);padding:28px 32px;color:#ffffff;">
+              <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.92;font-weight:bold;color:#ffffff !important;-webkit-text-fill-color:#ffffff;">
                 ${escapeHtml(badge)}
               </div>
-              <h1 style="margin:10px 0 0;font-size:28px;line-height:1.2;">
+              <h1 style="margin:10px 0 0;font-size:28px;line-height:1.2;color:#ffffff !important;-webkit-text-fill-color:#ffffff;">
                 ${escapeHtml(title)}
               </h1>
-              <p style="margin:10px 0 0;font-size:14px;line-height:1.6;color:#dbeafe;">
-                ${escapeHtml(subtitle)}
-              </p>
+              ${subtitle ? `<p style="margin:10px 0 0;font-size:14px;line-height:1.6;color:#dbeafe !important;-webkit-text-fill-color:#dbeafe;">${escapeHtml(subtitle)}</p>` : ''}
             </td>
           </tr>
           <tr>
@@ -325,7 +323,7 @@ const buildAssignmentEmailHtml = (email: ISentEmail) => {
   return renderTicketEmailLayout({
     badge: 'Aaradhya Group Ticket Management',
     title: 'New Ticket Assigned',
-    subtitle: 'A complaint ticket has been routed to your operational queue.',
+    subtitle: '',
     intro: `Hello <strong>${context.recipientName}</strong>,<br /><br />A complaint ticket has been assigned to you for action. Please review the details below and begin work as soon as possible.`,
     summaryRows: [
       { label: 'Ticket ID', value: context.ticketId },
