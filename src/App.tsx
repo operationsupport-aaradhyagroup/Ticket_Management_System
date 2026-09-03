@@ -961,6 +961,7 @@ export default function App() {
 
             {activeTab === 'config' && currentUser?.role === 'Admin' && (
               <AdminConfigPanel
+                token={token!}
                 departments={departments}
                 categories={categories}
                 companyUsers={companyUsers}

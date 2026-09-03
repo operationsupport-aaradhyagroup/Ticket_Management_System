@@ -135,6 +135,44 @@ export interface ITicket {
   isEscalated?: boolean;
   lastReminderSentAt?: string | null;
   reminderCount?: number;
+  source?: 'ADMIN' | 'PORTAL' | 'API' | 'PUBLIC_FORM' | 'EMAIL' | 'INTEGRATION';
+  requesterPhone?: string;
+  customFields?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  createdBy?: string;
+  integrationClientId?: string;
+  updatedAt?: string;
+}
+
+export interface IApiClient {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  keyHash: string;
+  active: boolean;
+  permissions: string[];
+  createdBy: string;
+  createdAt: string;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+}
+
+export interface IIdempotencyRecord {
+  integrationClientId: string;
+  idempotencyKey: string;
+  relatedTicketId: string;
+  createdAt: string;
+}
+
+export interface IApiAuditEvent {
+  id: string;
+  eventType: string;
+  actor: string;
+  apiClientId?: string;
+  ticketId?: string;
+  createdAt: string;
+  metadata?: Record<string, unknown>;
 }
 
 // Memory Cache fallback store for disk DB mode
@@ -144,6 +182,9 @@ interface IDiskStore {
   categories: IComplaintCategory[];
   tickets: ITicket[];
   emails: ISentEmail[];
+  apiClients?: IApiClient[];
+  idempotencyRecords?: IIdempotencyRecord[];
+  apiAuditEvents?: IApiAuditEvent[];
 }
 
 let diskDb: IDiskStore = {
@@ -160,8 +201,9 @@ let isMongoConnected = false;
 
 // Register schemas for Mongoose if it's active
 let UserSchema: any, DeptSchema: any, CatSchema: any, TicketSchema: any, EmailSchema: any;
-let EscalationRuleSchema: any;
+let EscalationRuleSchema: any, ApiClientSchema: any, IdempotencySchema: any, ApiAuditSchema: any;
 let UserModel: any, DeptModel: any, CatModel: any, TicketModel: any, EmailModel: any, EscalationRuleModel: any;
+let ApiClientModel: any, IdempotencyModel: any, ApiAuditModel: any;
 
 if (useMongo) {
   try {
@@ -241,7 +283,14 @@ if (useMongo) {
       }],
       isEscalated: { type: Boolean, default: false },
       lastReminderSentAt: { type: String, default: null },
-      reminderCount: { type: Number, default: 0 }
+      reminderCount: { type: Number, default: 0 },
+      source: { type: String, enum: ['ADMIN', 'PORTAL', 'API', 'PUBLIC_FORM', 'EMAIL', 'INTEGRATION'], default: 'PORTAL', index: true },
+      requesterPhone: { type: String, default: '' },
+      customFields: { type: Schema.Types.Mixed, default: undefined },
+      metadata: { type: Schema.Types.Mixed, default: undefined },
+      createdBy: { type: String, default: '' },
+      integrationClientId: { type: String, default: '', index: true },
+      updatedAt: { type: String, default: '' }
     });
 
     EmailSchema = new Schema({
@@ -266,12 +315,45 @@ if (useMongo) {
       updatedAt: { type: String, required: true }
     });
 
+    ApiClientSchema = new Schema({
+      id: { type: String, unique: true, required: true },
+      name: { type: String, required: true },
+      keyPrefix: { type: String, unique: true, required: true, index: true },
+      keyHash: { type: String, required: true, select: false },
+      active: { type: Boolean, default: true, index: true },
+      permissions: [{ type: String }],
+      createdBy: { type: String, required: true },
+      createdAt: { type: String, required: true },
+      lastUsedAt: { type: String, default: null },
+      expiresAt: { type: String, default: null },
+      revokedAt: { type: String, default: null }
+    });
+    IdempotencySchema = new Schema({
+      integrationClientId: { type: String, required: true },
+      idempotencyKey: { type: String, required: true },
+      relatedTicketId: { type: String, required: true },
+      createdAt: { type: String, required: true }
+    });
+    IdempotencySchema.index({ integrationClientId: 1, idempotencyKey: 1 }, { unique: true });
+    ApiAuditSchema = new Schema({
+      id: { type: String, unique: true, required: true },
+      eventType: { type: String, required: true, index: true },
+      actor: { type: String, required: true },
+      apiClientId: { type: String, default: '' },
+      ticketId: { type: String, default: '' },
+      createdAt: { type: String, required: true },
+      metadata: { type: Schema.Types.Mixed, default: undefined }
+    });
+
     UserModel = mongoose.models.User || mongoose.model('User', UserSchema);
     DeptModel = mongoose.models.Department || mongoose.model('Department', DeptSchema);
     CatModel = mongoose.models.Category || mongoose.model('Category', CatSchema);
     TicketModel = mongoose.models.Ticket || mongoose.model('Ticket', TicketSchema);
     EmailModel = mongoose.models.SentEmail || mongoose.model('SentEmail', EmailSchema);
     EscalationRuleModel = mongoose.models.EscalationRule || mongoose.model('EscalationRule', EscalationRuleSchema);
+    ApiClientModel = mongoose.models.ApiClient || mongoose.model('ApiClient', ApiClientSchema);
+    IdempotencyModel = mongoose.models.TicketIdempotency || mongoose.model('TicketIdempotency', IdempotencySchema);
+    ApiAuditModel = mongoose.models.ApiAuditEvent || mongoose.model('ApiAuditEvent', ApiAuditSchema);
   } catch (err) {
     console.warn('Mongoose Schemas failed to prepare: ', err);
   }
@@ -361,9 +443,12 @@ function loadFromDisk() {
       const data = fs.readFileSync(DISK_DB_PATH, 'utf-8');
       diskDb = JSON.parse(data);
       if (!diskDb.emails) diskDb.emails = [];
+      if (!diskDb.apiClients) diskDb.apiClients = [];
+      if (!diskDb.idempotencyRecords) diskDb.idempotencyRecords = [];
+      if (!diskDb.apiAuditEvents) diskDb.apiAuditEvents = [];
     } else {
       // Seed default mock structure
-      diskDb = { users: [], departments: [], categories: [], tickets: [], emails: [] };
+      diskDb = { users: [], departments: [], categories: [], tickets: [], emails: [], apiClients: [], idempotencyRecords: [], apiAuditEvents: [] };
       saveToDisk();
     }
   } catch (error) {
@@ -1163,6 +1248,57 @@ export const dbActions = {
     diskDb.emails.unshift(email);
     saveToDisk();
     return email;
+  },
+
+  findTicketById: async (ticketId: string): Promise<ITicket | null> => {
+    if (isMongoConnected) return await TicketModel.findOne({ id: ticketId }).lean();
+    return diskDb.tickets.find(ticket => ticket.id === ticketId) || null;
+  },
+
+  listApiClients: async (): Promise<IApiClient[]> => {
+    if (isMongoConnected) return await ApiClientModel.find({}).select('+keyHash').sort({ createdAt: -1 }).lean();
+    return [...(diskDb.apiClients || [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  findApiClientByPrefix: async (keyPrefix: string): Promise<IApiClient | null> => {
+    if (isMongoConnected) return await ApiClientModel.findOne({ keyPrefix }).select('+keyHash').lean();
+    return (diskDb.apiClients || []).find(client => client.keyPrefix === keyPrefix) || null;
+  },
+  createApiClient: async (client: IApiClient): Promise<IApiClient> => {
+    if (isMongoConnected) return (await ApiClientModel.create(client)).toObject();
+    diskDb.apiClients = diskDb.apiClients || [];
+    diskDb.apiClients.push(client);
+    saveToDisk();
+    return client;
+  },
+  updateApiClient: async (id: string, updates: Partial<IApiClient>): Promise<IApiClient | null> => {
+    if (isMongoConnected) return await ApiClientModel.findOneAndUpdate({ id }, { $set: updates }, { new: true }).select('+keyHash').lean();
+    diskDb.apiClients = diskDb.apiClients || [];
+    const index = diskDb.apiClients.findIndex(client => client.id === id);
+    if (index === -1) return null;
+    diskDb.apiClients[index] = { ...diskDb.apiClients[index], ...updates };
+    saveToDisk();
+    return diskDb.apiClients[index];
+  },
+  findIdempotency: async (clientId: string, key: string): Promise<IIdempotencyRecord | null> => {
+    if (isMongoConnected) return await IdempotencyModel.findOne({ integrationClientId: clientId, idempotencyKey: key }).lean();
+    return (diskDb.idempotencyRecords || []).find(record => record.integrationClientId === clientId && record.idempotencyKey === key) || null;
+  },
+  createIdempotency: async (record: IIdempotencyRecord): Promise<IIdempotencyRecord> => {
+    if (isMongoConnected) return (await IdempotencyModel.create(record)).toObject();
+    diskDb.idempotencyRecords = diskDb.idempotencyRecords || [];
+    if (diskDb.idempotencyRecords.some(item => item.integrationClientId === record.integrationClientId && item.idempotencyKey === record.idempotencyKey)) {
+      throw new Error('IDEMPOTENCY_CONFLICT');
+    }
+    diskDb.idempotencyRecords.push(record);
+    saveToDisk();
+    return record;
+  },
+  createApiAuditEvent: async (event: IApiAuditEvent): Promise<IApiAuditEvent> => {
+    if (isMongoConnected) return (await ApiAuditModel.create(event)).toObject();
+    diskDb.apiAuditEvents = diskDb.apiAuditEvents || [];
+    diskDb.apiAuditEvents.push(event);
+    saveToDisk();
+    return event;
   },
 
   // --- ESCALATION RULES SECTION ---

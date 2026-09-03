@@ -3,6 +3,7 @@ import { ComplaintCategory, CreateUserPayload, Department, EscalationRule, SLAUn
 import { Landmark, Plus, Trash2, ShieldCheck, FolderPlus, Clock, AlertCircle, Database, RefreshCw, KeyRound, Search, UserPlus, Building2, Briefcase, Mail, IdCard, GitBranch } from 'lucide-react';
 
 interface AdminConfigPanelProps {
+  token: string;
   departments: Department[];
   categories: ComplaintCategory[];
   companyUsers: UserSession[];
@@ -24,7 +25,16 @@ interface AdminConfigPanelProps {
   onResetTickets: () => Promise<{ success: boolean; message?: string; error?: string }>;
 }
 
+const formatApiDateTime = (value?: string | null) => {
+  if (!value) return 'Never';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Never';
+  const part = (number: number) => String(number).padStart(2, '0');
+  return `${part(date.getDate())}-${part(date.getMonth() + 1)}-${date.getFullYear()} ${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`;
+};
+
 export default function AdminConfigPanel({
+  token,
   departments,
   categories,
   companyUsers,
@@ -58,6 +68,12 @@ export default function AdminConfigPanel({
   const [employeeListSearch, setEmployeeListSearch] = useState('');
   const [deletingEmployeeEmail, setDeletingEmployeeEmail] = useState<string | null>(null);
   const [isCustomDesignation, setIsCustomDesignation] = useState(false);
+  const [apiClients, setApiClients] = useState<any[]>([]);
+  const [apiClientName, setApiClientName] = useState('');
+  const [apiClientExpiry, setApiClientExpiry] = useState('');
+  const [apiPermissions, setApiPermissions] = useState<string[]>(['tickets:create', 'tickets:read']);
+  const [newApiKey, setNewApiKey] = useState('');
+  const [apiClientStatus, setApiClientStatus] = useState('');
   const [userForm, setUserForm] = useState<CreateUserPayload>({
     firstName: '',
     lastName: '',
@@ -80,6 +96,55 @@ export default function AdminConfigPanel({
       }));
     }
   }, [departments, userForm.departmentId]);
+
+  const loadApiClients = async () => {
+    try {
+      const response = await fetch('/api/admin/api-clients', { headers: { Authorization: `Bearer ${token}` } });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'API clients could not be loaded.');
+      setApiClients(data.data || []);
+    } catch (error) {
+      setApiClientStatus(error instanceof Error ? error.message : 'API clients could not be loaded.');
+    }
+  };
+
+  useEffect(() => { void loadApiClients(); }, [token]);
+
+  const createApiClient = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setApiClientStatus('');
+    try {
+      const response = await fetch('/api/admin/api-clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: apiClientName, permissions: apiPermissions, expiresAt: apiClientExpiry || undefined })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'API client creation failed.');
+      setNewApiKey(data.data.apiKey);
+      setApiClientName('');
+      setApiClientExpiry('');
+      setApiClientStatus('API client created. Copy the key now; it will not be shown again.');
+      await loadApiClients();
+    } catch (error) {
+      setApiClientStatus(error instanceof Error ? error.message : 'API client creation failed.');
+    }
+  };
+
+  const updateApiClient = async (id: string, action: string) => {
+    const response = await fetch(`/api/admin/api-clients/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action })
+    });
+    const data = await response.json();
+    if (!response.ok) return setApiClientStatus(data.error || 'API client update failed.');
+    if (data.data.apiKey) {
+      setNewApiKey(data.data.apiKey);
+      setApiClientStatus('Key regenerated. Copy it now; the previous key is invalid.');
+    }
+    await loadApiClients();
+  };
 
   // Migration control states
   const [migrating, setMigrating] = useState(false);
@@ -974,7 +1039,63 @@ export default function AdminConfigPanel({
         </form>
       </div>
 
-      <div className="order-3 grid grid-cols-1 xl:grid-cols-1 gap-6">
+      <div className="order-3 bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+        <div className="flex items-center space-x-3 border-b border-gray-50 pb-3">
+          <div className="rounded-2xl bg-indigo-50 p-2 text-indigo-600"><KeyRound className="h-4.5 w-4.5" /></div>
+          <div>
+            <h3 className="text-sm font-bold text-gray-800">Developer / API Access</h3>
+            <p className="text-[11px] text-gray-400">Create and manage secure integration credentials.</p>
+          </div>
+        </div>
+
+        {apiClientStatus && <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs text-indigo-800">{apiClientStatus}</div>}
+        {newApiKey && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+            <p className="text-xs font-bold text-amber-900">This API key will only be shown once. Copy and store it securely.</p>
+            <div className="flex gap-2">
+              <code className="min-w-0 flex-1 break-all rounded-lg bg-white p-2 text-[11px] text-slate-700">{newApiKey}</code>
+              <button type="button" onClick={() => navigator.clipboard.writeText(newApiKey)} className="rounded-lg bg-amber-600 px-3 text-xs font-bold text-white">Copy</button>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={createApiClient} className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+          <input required minLength={3} value={apiClientName} onChange={(e) => setApiClientName(e.target.value)} placeholder="API client name" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs" />
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Optional expiry
+            <input type="datetime-local" value={apiClientExpiry} onChange={(e) => setApiClientExpiry(e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-normal normal-case tracking-normal text-slate-700" />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {['tickets:create','tickets:read','tickets:update','tickets:reply','tickets:assign'].map(permission => (
+              <label key={permission} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] text-slate-700">
+                <input type="checkbox" checked={apiPermissions.includes(permission)} onChange={(e) => setApiPermissions(current => e.target.checked ? [...current, permission] : current.filter(item => item !== permission))} />
+                {permission}
+              </label>
+            ))}
+          </div>
+          <button type="submit" className="rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white">Create API Client</button>
+        </form>
+
+        <div className="space-y-2">
+          {apiClients.length === 0 ? <p className="text-xs text-gray-400">No API clients created.</p> : apiClients.map(client => (
+            <div key={client.id} className="rounded-xl border border-slate-200 p-3 text-xs">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div><p className="font-bold text-slate-800">{client.name}</p><p className="font-mono text-[10px] text-slate-400">{client.keyPrefix}… · {client.active ? 'Active' : 'Disabled'}</p></div>
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" onClick={() => updateApiClient(client.id, client.active ? 'disable' : 'enable')} className="rounded-lg border px-2 py-1 text-[10px]">{client.active ? 'Disable' : 'Enable'}</button>
+                  <button type="button" onClick={() => updateApiClient(client.id, 'regenerate')} className="rounded-lg border px-2 py-1 text-[10px]">Regenerate</button>
+                  <button type="button" onClick={() => updateApiClient(client.id, 'revoke')} className="rounded-lg border border-rose-200 px-2 py-1 text-[10px] text-rose-600">Revoke</button>
+                </div>
+              </div>
+              <p className="mt-2 text-[10px] text-slate-500">Permissions: {client.permissions.join(', ')}</p>
+              <p className="text-[10px] text-slate-400">Created: {formatApiDateTime(client.createdAt)} · Last used: {formatApiDateTime(client.lastUsedAt)}</p>
+              <p className="text-[10px] text-slate-400">Expires: {client.expiresAt ? formatApiDateTime(client.expiresAt) : 'No expiry'}{client.revokedAt ? ` · Revoked: ${formatApiDateTime(client.revokedAt)}` : ''}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="order-4 grid grid-cols-1 xl:grid-cols-1 gap-6">
       <div className="bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
           <div className="rounded-2xl bg-amber-50 p-2 text-amber-600">
