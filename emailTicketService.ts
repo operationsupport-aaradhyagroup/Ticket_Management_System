@@ -13,6 +13,7 @@ export interface InboundEmail {
   fromEmail: string;
   fromName?: string;
   toEmails: string[];
+  ccEmails?: string[];
   originalToEmails?: string[];
   subject?: string;
   textBody?: string;
@@ -87,6 +88,7 @@ export async function processInboundEmail(email: InboundEmail, deps: EmailTicket
 
   const fromEmail = normalizeEmailAddress(email.fromEmail);
   const toEmails = (email.toEmails || []).map(normalizeEmailAddress).filter(Boolean);
+  const ccEmails = (email.ccEmails || []).map(normalizeEmailAddress).filter(Boolean);
   const originalToEmails = (email.originalToEmails || []).map(normalizeEmailAddress).filter(Boolean);
   const subject = safeText(email.subject, 500);
   const receivedAtDate = new Date(email.receivedAt);
@@ -123,7 +125,7 @@ export async function processInboundEmail(email: InboundEmail, deps: EmailTicket
 
   try {
     const title = safeText(subject.slice(prefix.length), 200) || 'Email Support Request';
-    const candidates = originalToEmails.length > 0 ? originalToEmails : toEmails;
+    const candidates = ccEmails.length > 0 ? ccEmails : (originalToEmails.length > 0 ? originalToEmails : toEmails);
     let assignedUser: IUser | null = null;
     for (const recipient of candidates) {
       assignedUser = await deps.findUserByEmail(recipient);
