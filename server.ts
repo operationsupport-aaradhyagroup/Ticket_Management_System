@@ -1396,13 +1396,15 @@ app.get('/cron', async (req, res) => {
   };
 
   app.get('/api/admin/integrations/gmail/status', authenticateToken, requireAdmin, async (_req, res) => {
-    const credential = await dbActions.getGmailIntegrationCredential();
-    res.json({ success: true, data: { configured: gmailConfigReady(), inboxEmail: GMAIL_INBOX_EMAIL, connected: !!credential, connectedEmail: credential?.email || null, redirectUri: GMAIL_REDIRECT_URI } });
+    const credentials = await dbActions.listGmailIntegrationCredentials();
+    res.json({ success: true, data: { configured: gmailConfigReady(), redirectUri: GMAIL_REDIRECT_URI, mailboxes: credentials.map(({ encryptedRefreshToken: _token, ...mailbox }) => mailbox) } });
   });
 
   app.post('/api/admin/integrations/gmail/authorize', authenticateToken, requireAdmin, (req, res) => {
     if (!gmailConfigReady()) return void res.status(503).json({ error: 'Gmail OAuth configuration is missing.' });
-    const state = jwt.sign({ purpose: 'gmail-oauth', userEmail: req.user!.email }, JWT_SECRET, { expiresIn: '10m' });
+    const userEmail = String(req.body.userEmail || '').trim().toLowerCase();
+    if (!userEmail) return void res.status(400).json({ error: 'Select the TMS user whose mailbox you are connecting.' });
+    const state = jwt.sign({ purpose: 'gmail-oauth', userEmail }, JWT_SECRET, { expiresIn: '10m' });
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     url.search = new URLSearchParams({ client_id: GMAIL_CLIENT_ID, redirect_uri: GMAIL_REDIRECT_URI, response_type: 'code', access_type: 'offline', prompt: 'consent', scope: 'https://www.googleapis.com/auth/gmail.readonly', state }).toString();
     res.json({ success: true, data: { authorizationUrl: url.toString() } });
@@ -1412,7 +1414,7 @@ app.get('/cron', async (req, res) => {
     try {
       const state = String(req.query.state || '');
       const code = String(req.query.code || '');
-      const payload = jwt.verify(state, JWT_SECRET) as { purpose?: string };
+      const payload = jwt.verify(state, JWT_SECRET) as { purpose?: string; userEmail?: string };
       if (payload.purpose !== 'gmail-oauth' || !code) throw new Error('GMAIL_OAUTH_INVALID_CALLBACK');
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code, client_id: GMAIL_CLIENT_ID, client_secret: GMAIL_CLIENT_SECRET, redirect_uri: GMAIL_REDIRECT_URI, grant_type: 'authorization_code' }) });
       const tokenData = await tokenResponse.json() as any;
@@ -1420,33 +1422,45 @@ app.get('/cron', async (req, res) => {
       const profileResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers: { Authorization: `Bearer ${tokenData.access_token}` } });
       const profile = await profileResponse.json() as any;
       const email = String(profile.emailAddress || '').toLowerCase();
-      if (!profileResponse.ok || email !== GMAIL_INBOX_EMAIL) throw new Error(`Authorize the configured inbox: ${GMAIL_INBOX_EMAIL}`);
+      if (!profileResponse.ok || email !== payload.userEmail) throw new Error(`Authorize the selected TMS user mailbox: ${payload.userEmail}`);
       const now = new Date().toISOString();
-      await dbActions.saveGmailIntegrationCredential({ id: 'gmail', email, encryptedRefreshToken: encryptGmailToken(tokenData.refresh_token), connectedAt: now, updatedAt: now });
+      await dbActions.saveGmailIntegrationCredential({ id: `gmail-${crypto.createHash('sha256').update(email).digest('hex').slice(0, 24)}`, email, userEmail: email, encryptedRefreshToken: encryptGmailToken(tokenData.refresh_token), connectedAt: now, updatedAt: now });
       res.send('<!doctype html><title>Gmail connected</title><p>Gmail inbox connected successfully. You can close this window and return to TMS.</p>');
     } catch (error) {
       res.status(400).send(`<!doctype html><title>Gmail connection failed</title><p>${escapeHtml(error instanceof Error ? error.message : 'Gmail connection failed.')}</p>`);
     }
   });
 
-  app.post('/api/admin/integrations/gmail/sync', authenticateToken, requireAdmin, async (_req, res) => {
+  app.post('/api/admin/integrations/gmail/sync', authenticateToken, requireAdmin, async (req, res) => {
     try {
-      const credential = await dbActions.getGmailIntegrationCredential();
-      if (!credential) return void res.status(409).json({ error: 'Connect the Gmail inbox before syncing.' });
+      const mailboxes = await dbActions.listGmailIntegrationCredentials();
+      const requestedMailboxId = String(req.body.mailboxId || '');
+      const selectedMailboxes = requestedMailboxId ? mailboxes.filter((mailbox) => mailbox.id === requestedMailboxId) : mailboxes;
+      if (selectedMailboxes.length === 0) return void res.status(409).json({ error: 'Connect a Gmail inbox before syncing.' });
+      const results = { created: 0, ignored: 0, duplicates: 0, failed: 0, mailboxes: selectedMailboxes.length };
+      for (const credential of selectedMailboxes) {
       const accessToken = await refreshGmailAccessToken(credential);
-      const listResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50&q=in%3Ainbox', { headers: { Authorization: `Bearer ${accessToken}` } });
+      const listResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20&q=in%3Ainbox', { headers: { Authorization: `Bearer ${accessToken}` } });
       const listData = await listResponse.json() as any;
       if (!listResponse.ok) throw new Error(listData.error?.message || 'GMAIL_MESSAGE_LIST_FAILED');
-      const results = { created: 0, ignored: 0, duplicates: 0, failed: 0 };
-      for (const item of listData.messages || []) {
-        const messageResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.id)}?format=full`, { headers: { Authorization: `Bearer ${accessToken}` } });
-        if (!messageResponse.ok) { results.failed += 1; continue; }
-        const message = await messageResponse.json() as any;
-        const result = await processInboundEmail({ messageId: gmailHeader(message.payload, 'Message-ID') || `gmail-${message.id}`, fromEmail: gmailHeader(message.payload, 'From'), fromName: '', toEmails: gmailAddresses(gmailHeader(message.payload, 'To')), originalToEmails: gmailAddresses(gmailHeader(message.payload, 'X-Original-To') || gmailHeader(message.payload, 'Delivered-To')), subject: gmailHeader(message.payload, 'Subject'), textBody: gmailBody(message.payload, 'text/plain'), htmlBody: gmailBody(message.payload, 'text/html'), receivedAt: new Date(Number(message.internalDate || Date.now())).toISOString() }, emailTicketDependencies);
-        if (result.status === 'CREATED' || result.status === 'DEFAULT_ASSIGNEE_USED') results.created += 1;
-        else if (result.status === 'IGNORED_SUBJECT') results.ignored += 1;
-        else if (result.status === 'DUPLICATE') results.duplicates += 1;
-        else if (result.status === 'FAILED') results.failed += 1;
+      const messages = listData.messages || [];
+      let nextMessageIndex = 0;
+      const processNextMessage = async () => {
+        while (nextMessageIndex < messages.length) {
+          const item = messages[nextMessageIndex++];
+          try {
+            const messageResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.id)}?format=full`, { headers: { Authorization: `Bearer ${accessToken}` } });
+            if (!messageResponse.ok) { results.failed += 1; continue; }
+            const message = await messageResponse.json() as any;
+            const result = await processInboundEmail({ messageId: gmailHeader(message.payload, 'Message-ID') || `gmail-${message.id}`, fromEmail: gmailHeader(message.payload, 'From'), fromName: '', toEmails: gmailAddresses(gmailHeader(message.payload, 'To')), originalToEmails: gmailAddresses(gmailHeader(message.payload, 'X-Original-To') || gmailHeader(message.payload, 'Delivered-To')), subject: gmailHeader(message.payload, 'Subject'), textBody: gmailBody(message.payload, 'text/plain'), htmlBody: gmailBody(message.payload, 'text/html'), receivedAt: new Date(Number(message.internalDate || Date.now())).toISOString() }, emailTicketDependencies);
+            if (result.status === 'CREATED' || result.status === 'DEFAULT_ASSIGNEE_USED') results.created += 1;
+            else if (result.status === 'IGNORED_SUBJECT') results.ignored += 1;
+            else if (result.status === 'DUPLICATE') results.duplicates += 1;
+            else if (result.status === 'FAILED') results.failed += 1;
+          } catch { results.failed += 1; }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(5, messages.length) }, processNextMessage));
       }
       res.json({ success: true, data: results });
     } catch (error) { res.status(500).json({ error: error instanceof Error ? error.message : 'Gmail sync failed.' }); }

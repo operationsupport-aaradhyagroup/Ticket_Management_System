@@ -185,8 +185,9 @@ export interface IEmailTicketSettings {
 }
 
 export interface IGmailIntegrationCredential {
-  id: 'gmail';
+  id: string;
   email: string;
+  userEmail: string;
   encryptedRefreshToken: string;
   connectedAt: string;
   updatedAt: string;
@@ -222,7 +223,7 @@ interface IDiskStore {
   apiAuditEvents?: IApiAuditEvent[];
   emailTicketSettings?: IEmailTicketSettings;
   inboundEmailEvents?: IInboundEmailEvent[];
-  gmailIntegrationCredential?: IGmailIntegrationCredential;
+  gmailIntegrationCredentials?: IGmailIntegrationCredential[];
 }
 
 let diskDb: IDiskStore = {
@@ -410,8 +411,9 @@ if (useMongo) {
       createdAt: { type: String, required: true }
     });
     GmailIntegrationCredentialSchema = new Schema({
-      id: { type: String, unique: true, required: true, default: 'gmail' },
-      email: { type: String, required: true },
+      id: { type: String, unique: true, required: true },
+      email: { type: String, required: true, unique: true },
+      userEmail: { type: String, required: true },
       encryptedRefreshToken: { type: String, required: true, select: false },
       connectedAt: { type: String, required: true },
       updatedAt: { type: String, required: true }
@@ -522,6 +524,7 @@ function loadFromDisk() {
       if (!diskDb.idempotencyRecords) diskDb.idempotencyRecords = [];
       if (!diskDb.apiAuditEvents) diskDb.apiAuditEvents = [];
       if (!diskDb.inboundEmailEvents) diskDb.inboundEmailEvents = [];
+      if (!diskDb.gmailIntegrationCredentials) diskDb.gmailIntegrationCredentials = [];
       if (!diskDb.emailTicketSettings) {
         diskDb.emailTicketSettings = {
           id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
@@ -533,6 +536,7 @@ function loadFromDisk() {
       diskDb = {
         users: [], departments: [], categories: [], tickets: [], emails: [], apiClients: [], idempotencyRecords: [], apiAuditEvents: [],
         inboundEmailEvents: [],
+        gmailIntegrationCredentials: [],
         emailTicketSettings: {
           id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
           defaultAssigneeEmail: 'operation_support@kisansuvidha.com', updatedAt: '', updatedBy: 'system'
@@ -1447,21 +1451,27 @@ export const dbActions = {
       .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
       .slice(0, safeLimit);
   },
-  getGmailIntegrationCredential: async (): Promise<IGmailIntegrationCredential | null> => {
-    if (isMongoConnected) return await GmailIntegrationCredentialModel.findOne({ id: 'gmail' }).select('+encryptedRefreshToken').lean();
-    return diskDb.gmailIntegrationCredential || null;
+  listGmailIntegrationCredentials: async (): Promise<IGmailIntegrationCredential[]> => {
+    if (isMongoConnected) {
+      const credentials = await GmailIntegrationCredentialModel.find({}).select('+encryptedRefreshToken').lean();
+      return credentials.map((credential: IGmailIntegrationCredential) => ({ ...credential, userEmail: credential.userEmail || credential.email }));
+    }
+    return (diskDb.gmailIntegrationCredentials || []).map((credential) => ({ ...credential, userEmail: credential.userEmail || credential.email }));
   },
   saveGmailIntegrationCredential: async (credential: IGmailIntegrationCredential): Promise<IGmailIntegrationCredential> => {
     if (isMongoConnected) return await GmailIntegrationCredentialModel.findOneAndUpdate(
-      { id: 'gmail' }, { $set: credential }, { new: true, upsert: true, setDefaultsOnInsert: true }
+      { $or: [{ id: credential.id }, { email: credential.email }] }, { $set: credential }, { new: true, upsert: true, setDefaultsOnInsert: true }
     ).select('+encryptedRefreshToken').lean();
-    diskDb.gmailIntegrationCredential = credential;
+    diskDb.gmailIntegrationCredentials = diskDb.gmailIntegrationCredentials || [];
+    const index = diskDb.gmailIntegrationCredentials.findIndex((item) => item.id === credential.id || item.email === credential.email);
+    if (index === -1) diskDb.gmailIntegrationCredentials.push(credential);
+    else diskDb.gmailIntegrationCredentials[index] = credential;
     saveToDisk();
     return credential;
   },
-  deleteGmailIntegrationCredential: async (): Promise<void> => {
-    if (isMongoConnected) { await GmailIntegrationCredentialModel.deleteOne({ id: 'gmail' }); return; }
-    delete diskDb.gmailIntegrationCredential;
+  deleteGmailIntegrationCredential: async (id: string): Promise<void> => {
+    if (isMongoConnected) { await GmailIntegrationCredentialModel.deleteOne({ id }); return; }
+    diskDb.gmailIntegrationCredentials = (diskDb.gmailIntegrationCredentials || []).filter((item) => item.id !== id);
     saveToDisk();
   },
 

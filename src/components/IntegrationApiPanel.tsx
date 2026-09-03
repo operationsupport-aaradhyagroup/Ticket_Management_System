@@ -19,22 +19,25 @@ export default function IntegrationApiPanel({ token }: IntegrationApiPanelProps)
   const [emailSettings, setEmailSettings] = useState({ enabled: false, subjectPrefix: 'Resolve this Ticket --', defaultAssigneeEmail: 'operation_support@kisansuvidha.com' });
   const [emailLogs, setEmailLogs] = useState<any[]>([]);
   const [emailStatus, setEmailStatus] = useState('');
-  const [gmail, setGmail] = useState<{ configured: boolean; inboxEmail: string; connected: boolean; connectedEmail: string | null }>({ configured: false, inboxEmail: '', connected: false, connectedEmail: null });
+  const [gmail, setGmail] = useState<{ configured: boolean; mailboxes: Array<{ id: string; email: string; userEmail: string }> }>({ configured: false, mailboxes: [] });
+  const [tmsUsers, setTmsUsers] = useState<Array<{ email: string; name: string }>>([]);
+  const [selectedUserEmail, setSelectedUserEmail] = useState('');
   const [gmailStatus, setGmailStatus] = useState('');
   const [syncingGmail, setSyncingGmail] = useState(false);
 
   const loadData = async () => {
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const [clientsResponse, settingsResponse, logsResponse, gmailResponse] = await Promise.all([
-        fetch('/api/admin/api-clients', { headers }), fetch('/api/admin/email-ticket/settings', { headers }), fetch('/api/admin/email-ticket/logs', { headers }), fetch('/api/admin/integrations/gmail/status', { headers })
+      const [clientsResponse, settingsResponse, logsResponse, gmailResponse, usersResponse] = await Promise.all([
+        fetch('/api/admin/api-clients', { headers }), fetch('/api/admin/email-ticket/settings', { headers }), fetch('/api/admin/email-ticket/logs', { headers }), fetch('/api/admin/integrations/gmail/status', { headers }), fetch('/api/users', { headers })
       ]);
-      const [clients, settings, logs, gmailData] = await Promise.all([clientsResponse.json(), settingsResponse.json(), logsResponse.json(), gmailResponse.json()]);
-      if (!clientsResponse.ok || !settingsResponse.ok || !logsResponse.ok || !gmailResponse.ok) throw new Error(clients.error || settings.error || logs.error || gmailData.error || 'Integration settings could not be loaded.');
+      const [clients, settings, logs, gmailData, usersData] = await Promise.all([clientsResponse.json(), settingsResponse.json(), logsResponse.json(), gmailResponse.json(), usersResponse.json()]);
+      if (!clientsResponse.ok || !settingsResponse.ok || !logsResponse.ok || !gmailResponse.ok || !usersResponse.ok) throw new Error(clients.error || settings.error || logs.error || gmailData.error || usersData.error || 'Integration settings could not be loaded.');
       setApiClients(clients.data || []);
       setEmailSettings(settings.data);
       setEmailLogs(logs.data || []);
       setGmail(gmailData.data);
+      setTmsUsers(usersData.users || []);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Integration settings could not be loaded.';
       setApiStatus(message);
@@ -97,7 +100,8 @@ export default function IntegrationApiPanel({ token }: IntegrationApiPanelProps)
   const connectGmail = async () => {
     setGmailStatus('');
     try {
-      const response = await fetch('/api/admin/integrations/gmail/authorize', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      if (!selectedUserEmail) throw new Error('Select a TMS user first.');
+      const response = await fetch('/api/admin/integrations/gmail/authorize', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ userEmail: selectedUserEmail }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Gmail authorization could not be started.');
       window.location.assign(data.data.authorizationUrl);
@@ -114,7 +118,7 @@ export default function IntegrationApiPanel({ token }: IntegrationApiPanelProps)
     </section>
     <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
       <div className="flex items-center gap-3 border-b border-slate-100 pb-3"><div className="rounded-2xl bg-sky-50 p-2 text-sky-600"><Mail className="h-5 w-5" /></div><div><h2 className="text-sm font-bold text-slate-800">Email Ticket Integration</h2><p className="text-[11px] text-slate-400">Configure inbound email ticket creation and inspect its event logs.</p></div></div>
-      <div className="rounded-2xl border border-sky-100 bg-sky-50 p-3 text-xs text-sky-900"><p className="font-bold">Gmail inbox: {gmail.inboxEmail || 'Not configured'}</p><p className="mt-1">{gmail.connected ? `Connected as ${gmail.connectedEmail}` : 'Not connected'}</p><div className="mt-3 flex flex-wrap gap-2">{!gmail.connected && <button type="button" onClick={connectGmail} disabled={!gmail.configured} className="rounded-lg bg-sky-600 px-3 py-2 font-bold text-white disabled:bg-slate-300">Connect Gmail</button>}{gmail.connected && <button type="button" disabled={syncingGmail} onClick={syncGmail} className="rounded-lg bg-sky-600 px-3 py-2 font-bold text-white disabled:bg-sky-300">{syncingGmail ? 'Syncing…' : 'Sync Gmail Inbox'}</button>}</div>{gmailStatus && <p className="mt-2 text-sky-800">{gmailStatus}</p>}</div>
+      <div className="rounded-2xl border border-sky-100 bg-sky-50 p-3 text-xs text-sky-900"><p className="font-bold">Connected Gmail mailboxes ({gmail.mailboxes.length})</p>{gmail.mailboxes.map((mailbox) => <p key={mailbox.id} className="mt-1">{mailbox.email}</p>)}<div className="mt-3 flex flex-wrap gap-2"><select value={selectedUserEmail} onChange={(event) => setSelectedUserEmail(event.target.value)} className="rounded-lg border border-sky-200 bg-white px-2 py-2"><option value="">Select TMS user</option>{tmsUsers.map((user) => <option key={user.email} value={user.email}>{user.name} — {user.email}</option>)}</select><button type="button" onClick={connectGmail} disabled={!gmail.configured || !selectedUserEmail} className="rounded-lg bg-sky-600 px-3 py-2 font-bold text-white disabled:bg-slate-300">Add Gmail Mailbox</button>{gmail.mailboxes.length > 0 && <button type="button" disabled={syncingGmail} onClick={syncGmail} className="rounded-lg bg-sky-600 px-3 py-2 font-bold text-white disabled:bg-sky-300">{syncingGmail ? 'Syncing…' : 'Sync All Mailboxes'}</button>}</div>{gmailStatus && <p className="mt-2 text-sky-800">{gmailStatus}</p>}</div>
       {emailStatus && <p className="rounded-xl border border-sky-100 bg-sky-50 p-3 text-xs text-sky-800">{emailStatus}</p>}
       <form onSubmit={saveEmailSettings} className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4"><label className="flex items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={emailSettings.enabled} onChange={(event) => setEmailSettings((current) => ({ ...current, enabled: event.target.checked }))} />Enable Email Ticket Creation</label><label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Subject Prefix<input required value={emailSettings.subjectPrefix} onChange={(event) => setEmailSettings((current) => ({ ...current, subjectPrefix: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-normal normal-case tracking-normal" /></label><label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Default Assignee Email<input type="email" value={emailSettings.defaultAssigneeEmail} onChange={(event) => setEmailSettings((current) => ({ ...current, defaultAssigneeEmail: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-normal normal-case tracking-normal" /></label><button type="submit" className="rounded-xl bg-sky-600 px-4 py-2.5 text-xs font-bold text-white">Save Email Settings</button></form>
       <div className="overflow-x-auto rounded-2xl border border-slate-100"><table className="min-w-full text-left text-[10px] text-slate-600"><thead className="bg-slate-50 uppercase tracking-wider text-slate-400"><tr><th className="p-2">Received</th><th className="p-2">From</th><th className="p-2">To</th><th className="p-2">Subject</th><th className="p-2">Status</th><th className="p-2">Assigned</th><th className="p-2">Ticket</th><th className="p-2">Error</th></tr></thead><tbody>{emailLogs.length === 0 ? <tr><td colSpan={8} className="p-3 text-center text-slate-400">No inbound email events.</td></tr> : emailLogs.map((log) => <tr key={log.messageId} className="border-t border-slate-100 align-top"><td className="p-2 whitespace-nowrap">{formatDateTime(log.receivedAt)}</td><td className="p-2">{log.fromEmail}</td><td className="p-2">{(log.originalToEmails?.length ? log.originalToEmails : log.toEmails || []).join(', ')}</td><td className="p-2">{log.subject}</td><td className="p-2 font-semibold">{log.status}</td><td className="p-2">{log.assignedAgentEmail || 'Unassigned'}</td><td className="p-2">{log.ticketId || '—'}</td><td className="p-2 text-rose-600">{log.errorMessage || log.errorCode || '—'}</td></tr>)}</tbody></table></div>
