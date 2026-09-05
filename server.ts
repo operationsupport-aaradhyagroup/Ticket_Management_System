@@ -806,7 +806,7 @@ async function startServer() {
       ...current, enabled: Boolean(input.enabled), syncNewTickets: input.syncNewTickets !== false,
       defaultDepartmentId: String(input.defaultDepartmentId || ''), defaultAssigneeEmail: String(input.defaultAssigneeEmail || ''),
       defaultPriority: ['Low', 'Medium', 'High', 'Critical'].includes(input.defaultPriority) ? input.defaultPriority : 'Medium',
-      departmentMappings: Array.isArray(input.departmentMappings) ? input.departmentMappings : [], assigneeMappings: Array.isArray(input.assigneeMappings) ? input.assigneeMappings : [],
+      departmentMappings: Array.isArray(input.departmentMappings) ? input.departmentMappings : [], assigneeMappings: Array.isArray(input.assigneeMappings) ? input.assigneeMappings : [], portalAssigneeMappings: Array.isArray(input.portalAssigneeMappings) ? input.portalAssigneeMappings : [],
       updatedAt: new Date().toISOString(), updatedBy: req.user!.email
     };
     const saved = await dbActions.saveZohoDeskSettings(settings);

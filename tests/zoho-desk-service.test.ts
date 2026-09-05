@@ -6,7 +6,7 @@ import { getZohoEventType, getZohoTicketPayload, mapZohoPriority, mapZohoStatus,
 
 const settings = {
   id: 'zoho-desk' as const, enabled: true, syncNewTickets: true, defaultDepartmentId: 'dept-default', defaultAssigneeEmail: 'fallback@example.com', defaultPriority: 'Medium' as const,
-  departmentMappings: [{ zohoDepartmentId: 'zoho-it', tmsDepartmentId: 'dept-it' }], assigneeMappings: [], updatedAt: '', updatedBy: 'admin@example.com'
+  departmentMappings: [{ zohoDepartmentId: 'zoho-it', tmsDepartmentId: 'dept-it' }], assigneeMappings: [], portalAssigneeMappings: [{ zohoPortal: 'Bhoodhan', tmsUserEmail: 'agent@example.com' }], updatedAt: '', updatedBy: 'admin@example.com'
 };
 const departments = [{ id: 'dept-it', name: 'IT', isCustom: false, createdAt: '' }, { id: 'dept-default', name: 'Default', isCustom: false, createdAt: '' }];
 const users = [{ email: 'agent@example.com', name: 'Agent', passwordHash: '', role: 'User' as const }, { email: 'fallback@example.com', name: 'Fallback', passwordHash: '', role: 'User' as const }];
@@ -49,6 +49,11 @@ test('Zoho mapper uses configured department and assignee fallbacks', () => {
   const input = mapZohoTicketToTmsInput({ id: '80002', subject: 'Network issue', description: 'Network is unavailable.' }, settings, departments, users);
   assert.equal(input.departmentId, 'dept-default');
   assert.equal(input.assignedTo, 'fallback@example.com');
+});
+
+test('Zoho mapper prioritizes portal-based assignee routing', () => {
+  const input = mapZohoTicketToTmsInput({ id: '80003', subject: 'Portal route', portal: 'bhoodhan', assigneeEmail: 'fallback@example.com' }, settings, departments, users);
+  assert.equal(input.assignedTo, 'agent@example.com');
 });
 
 test('Zoho webhook uses a secure callback token and the canonical ticket service', () => {

@@ -213,6 +213,7 @@ export interface IZohoDeskSettings {
   defaultPriority: 'Low' | 'Medium' | 'High' | 'Critical';
   departmentMappings: Array<{ zohoDepartmentId: string; zohoDepartmentName?: string; tmsDepartmentId: string }>;
   assigneeMappings: Array<{ zohoAssigneeId: string; tmsUserEmail: string }>;
+  portalAssigneeMappings: Array<{ zohoPortal: string; tmsUserEmail: string }>;
   updatedAt: string;
   updatedBy: string;
 }
@@ -471,7 +472,7 @@ if (useMongo) {
     ZohoDeskSettingsSchema = new Schema({
       id: { type: String, unique: true, required: true, default: 'zoho-desk' }, enabled: { type: Boolean, default: false }, syncNewTickets: { type: Boolean, default: true },
       defaultDepartmentId: { type: String, default: '' }, defaultAssigneeEmail: { type: String, default: '' }, defaultPriority: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },
-      departmentMappings: [{ zohoDepartmentId: String, zohoDepartmentName: String, tmsDepartmentId: String }], assigneeMappings: [{ zohoAssigneeId: String, tmsUserEmail: String }],
+      departmentMappings: [{ zohoDepartmentId: String, zohoDepartmentName: String, tmsDepartmentId: String }], assigneeMappings: [{ zohoAssigneeId: String, tmsUserEmail: String }], portalAssigneeMappings: [{ zohoPortal: String, tmsUserEmail: String }],
       updatedAt: { type: String, required: true }, updatedBy: { type: String, required: true }
     });
     ZohoDeskEventSchema = new Schema({
@@ -590,7 +591,7 @@ function loadFromDisk() {
       if (!diskDb.inboundEmailEvents) diskDb.inboundEmailEvents = [];
       if (!diskDb.gmailIntegrationCredentials) diskDb.gmailIntegrationCredentials = [];
       if (!diskDb.zohoDeskEvents) diskDb.zohoDeskEvents = [];
-      if (!diskDb.zohoDeskSettings) diskDb.zohoDeskSettings = { id: 'zoho-desk', enabled: false, syncNewTickets: true, defaultDepartmentId: '', defaultAssigneeEmail: '', defaultPriority: 'Medium', departmentMappings: [], assigneeMappings: [], updatedAt: '', updatedBy: 'system' };
+      if (!diskDb.zohoDeskSettings) diskDb.zohoDeskSettings = { id: 'zoho-desk', enabled: false, syncNewTickets: true, defaultDepartmentId: '', defaultAssigneeEmail: '', defaultPriority: 'Medium', departmentMappings: [], assigneeMappings: [], portalAssigneeMappings: [], updatedAt: '', updatedBy: 'system' };
       if (!diskDb.emailTicketSettings) {
         diskDb.emailTicketSettings = {
           id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
@@ -604,7 +605,7 @@ function loadFromDisk() {
         inboundEmailEvents: [],
         gmailIntegrationCredentials: [],
         zohoDeskEvents: [],
-        zohoDeskSettings: { id: 'zoho-desk', enabled: false, syncNewTickets: true, defaultDepartmentId: '', defaultAssigneeEmail: '', defaultPriority: 'Medium', departmentMappings: [], assigneeMappings: [], updatedAt: '', updatedBy: 'system' },
+        zohoDeskSettings: { id: 'zoho-desk', enabled: false, syncNewTickets: true, defaultDepartmentId: '', defaultAssigneeEmail: '', defaultPriority: 'Medium', departmentMappings: [], assigneeMappings: [], portalAssigneeMappings: [], updatedAt: '', updatedBy: 'system' },
         emailTicketSettings: {
           id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
           defaultAssigneeEmail: 'operation_support@kisansuvidha.com', updatedAt: '', updatedBy: 'system'
@@ -1569,7 +1570,7 @@ export const dbActions = {
     saveToDisk();
   },
   getZohoDeskSettings: async (): Promise<IZohoDeskSettings> => {
-    const defaults: IZohoDeskSettings = { id: 'zoho-desk', enabled: false, syncNewTickets: true, defaultDepartmentId: '', defaultAssigneeEmail: '', defaultPriority: 'Medium', departmentMappings: [], assigneeMappings: [], updatedAt: '', updatedBy: 'system' };
+    const defaults: IZohoDeskSettings = { id: 'zoho-desk', enabled: false, syncNewTickets: true, defaultDepartmentId: '', defaultAssigneeEmail: '', defaultPriority: 'Medium', departmentMappings: [], assigneeMappings: [], portalAssigneeMappings: [], updatedAt: '', updatedBy: 'system' };
     if (isMongoConnected) {
       const settings = await ZohoDeskSettingsModel.findOne({ id: 'zoho-desk' }).lean();
       return { ...defaults, ...(settings || {}) };
@@ -1580,7 +1581,8 @@ export const dbActions = {
     const normalized: IZohoDeskSettings = {
       ...settings, id: 'zoho-desk', defaultDepartmentId: settings.defaultDepartmentId.trim(), defaultAssigneeEmail: settings.defaultAssigneeEmail.toLowerCase().trim(),
       departmentMappings: (settings.departmentMappings || []).filter((mapping) => mapping.zohoDepartmentId?.trim() && mapping.tmsDepartmentId?.trim()).map((mapping) => ({ zohoDepartmentId: mapping.zohoDepartmentId.trim(), zohoDepartmentName: mapping.zohoDepartmentName?.trim() || '', tmsDepartmentId: mapping.tmsDepartmentId.trim() })),
-      assigneeMappings: (settings.assigneeMappings || []).filter((mapping) => mapping.zohoAssigneeId?.trim() && mapping.tmsUserEmail?.trim()).map((mapping) => ({ zohoAssigneeId: mapping.zohoAssigneeId.trim(), tmsUserEmail: mapping.tmsUserEmail.toLowerCase().trim() }))
+      assigneeMappings: (settings.assigneeMappings || []).filter((mapping) => mapping.zohoAssigneeId?.trim() && mapping.tmsUserEmail?.trim()).map((mapping) => ({ zohoAssigneeId: mapping.zohoAssigneeId.trim(), tmsUserEmail: mapping.tmsUserEmail.toLowerCase().trim() })),
+      portalAssigneeMappings: (settings.portalAssigneeMappings || []).filter((mapping) => mapping.zohoPortal?.trim() && mapping.tmsUserEmail?.trim()).map((mapping) => ({ zohoPortal: mapping.zohoPortal.trim(), tmsUserEmail: mapping.tmsUserEmail.toLowerCase().trim() }))
     };
     if (isMongoConnected) return await ZohoDeskSettingsModel.findOneAndUpdate({ id: 'zoho-desk' }, { $set: normalized }, { new: true, upsert: true, setDefaultsOnInsert: true }).lean();
     diskDb.zohoDeskSettings = normalized;

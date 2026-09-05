@@ -63,7 +63,9 @@ export function mapZohoTicketToTmsInput(ticketPayload: UnknownRecord, settings: 
   const ownerId = firstText(ticketPayload.assigneeId, ticketPayload.ownerId, owner.id, 120);
   const ownerEmail = firstText(ticketPayload.assigneeEmail, ticketPayload.ownerEmail, owner.email, 254).toLowerCase();
   const explicitAssignee = settings.assigneeMappings.find((mapping) => mapping.zohoAssigneeId === ownerId)?.tmsUserEmail;
-  const assignedTo = [ownerEmail, explicitAssignee, settings.defaultAssigneeEmail].find((email) => email && users.some((user) => user.email.toLowerCase() === email.toLowerCase()));
+  const sourcePortal = firstText(ticketPayload.portal, ticketPayload.sourcePortal, ticketPayload.portalName, 200);
+  const portalAssignee = settings.portalAssigneeMappings.find((mapping) => mapping.zohoPortal.toLowerCase() === sourcePortal.toLowerCase())?.tmsUserEmail;
+  const assignedTo = [portalAssignee, ownerEmail, explicitAssignee, settings.defaultAssigneeEmail].find((email) => email && users.some((user) => user.email.toLowerCase() === email.toLowerCase()));
   const externalTicketId = firstText(ticketPayload.id, ticketPayload.ticketId, 200);
   const title = firstText(ticketPayload.subject, ticketPayload.title, 'Zoho Desk Ticket', 200) || 'Zoho Desk Ticket';
   const description = firstText(ticketPayload.description, ticketPayload.descriptionPlainText, ticketPayload.summary, title, 10_000) || title;
