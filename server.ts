@@ -788,7 +788,7 @@ async function startServer() {
     return {
       configured: Boolean(ZOHO_DESK_ORG_ID && ZOHO_DESK_WEBHOOK_SECRET),
       organizationIdConfigured: Boolean(ZOHO_DESK_ORG_ID), webhookSecretConfigured: Boolean(ZOHO_DESK_WEBHOOK_SECRET),
-      webhookUrl: `${APP_URL.replace(/\/$/, '')}/api/integrations/zoho-desk/webhook${ZOHO_DESK_WEBHOOK_SECRET ? `?token=${encodeURIComponent(ZOHO_DESK_WEBHOOK_SECRET)}` : ''}`, settings
+      webhookUrl: `${APP_URL.replace(/\/$/, '')}/api/integrations/zoho-desk/webhook${ZOHO_DESK_WEBHOOK_SECRET ? `/${encodeURIComponent(ZOHO_DESK_WEBHOOK_SECRET)}` : ''}`, settings
     };
   };
 
@@ -812,23 +812,23 @@ async function startServer() {
     res.json({ success: true, data: saved });
   });
 
-  app.get('/api/integrations/zoho-desk/webhook', (_req, res) => {
+  app.get(['/api/integrations/zoho-desk/webhook', '/api/integrations/zoho-desk/webhook/:token'], (_req, res) => {
     res.status(200).json({ success: true, service: 'zoho-desk-webhook' });
   });
 
-  app.post('/api/integrations/zoho-desk/webhook', async (req, res) => {
+  app.post(['/api/integrations/zoho-desk/webhook', '/api/integrations/zoho-desk/webhook/:token'], async (req, res) => {
     const receivedAt = new Date().toISOString();
     let externalTicketId = '';
     let eventType = '';
     const recordEvent = async (processingStatus: 'RECEIVED' | 'PROCESSED' | 'DUPLICATE' | 'IGNORED' | 'FAILED', values: Record<string, unknown> = {}) => {
       try {
-        await dbActions.createZohoDeskEvent({ id: `zoho-${crypto.randomUUID()}`, provider: 'ZOHO_DESK', eventType, externalTicketId, receivedAt, processingStatus, ...values });
+        await dbActions.createZohoDeskEvent({ id: `zoho-${crypto.randomUUID()}`, provider: 'ZOHO_DESK', eventType: eventType || 'UNKNOWN', externalTicketId, receivedAt, processingStatus, ...values });
       } catch (error) {
         console.warn('Zoho Desk integration event log failed', error instanceof Error ? error.message : 'unknown error');
       }
     };
     try {
-      const suppliedToken = typeof req.query.token === 'string' ? req.query.token : '';
+      const suppliedToken = typeof req.params.token === 'string' ? req.params.token : typeof req.query.token === 'string' ? req.query.token : '';
       const expectedToken = Buffer.from(ZOHO_DESK_WEBHOOK_SECRET);
       const receivedToken = Buffer.from(suppliedToken);
       const validToken = expectedToken.length > 0 && expectedToken.length === receivedToken.length && crypto.timingSafeEqual(expectedToken, receivedToken);

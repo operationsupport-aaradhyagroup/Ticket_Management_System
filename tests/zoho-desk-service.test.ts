@@ -40,7 +40,7 @@ test('Zoho mapper uses configured department and assignee fallbacks', () => {
 });
 
 test('Zoho webhook uses a secure callback token and the canonical ticket service', () => {
-  assert.match(serverSource, /post\('\/api\/integrations\/zoho-desk\/webhook'/);
+  assert.match(serverSource, /post\(\['\/api\/integrations\/zoho-desk\/webhook', '\/api\/integrations\/zoho-desk\/webhook\/:token'\]/);
   assert.match(serverSource, /ZOHO_DESK_WEBHOOK_SECRET/);
   assert.match(serverSource, /timingSafeEqual/);
   assert.match(zohoServiceSource, /source: 'ZOHO_DESK'/);
