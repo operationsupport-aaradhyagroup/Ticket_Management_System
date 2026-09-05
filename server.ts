@@ -844,7 +844,9 @@ async function startServer() {
       const ticketPayload = getZohoTicketPayload(req.body);
       externalTicketId = String(ticketPayload.id || ticketPayload.ticketId || '').trim();
       if (!eventType && externalTicketId) eventType = 'TICKET_ADD';
-      if (eventType !== 'TICKET_ADD') {
+      const isTicketCreate = eventType === 'TICKET_ADD';
+      const isTicketStatusUpdate = ['TICKET_UPDATE', 'TICKET_STATUS_UPDATE', 'TICKET_CLOSE'].includes(eventType);
+      if (!isTicketCreate && !isTicketStatusUpdate) {
         await recordEvent('IGNORED', { payloadMetadata: { eventType } });
         return void res.status(200).json({ success: true, status: 'ignored' });
       }
@@ -858,6 +860,23 @@ async function startServer() {
         return void res.status(200).json({ success: true, status: 'ignored' });
       }
       const existing = await dbActions.findZohoDeskTicketByExternalId(externalTicketId);
+      if (isTicketStatusUpdate) {
+        if (!existing) {
+          await recordEvent('IGNORED', { errorMessage: 'No matching TMS ticket was found for this Zoho Desk status update.', retryable: false });
+          return void res.status(200).json({ success: true, status: 'ignored' });
+        }
+        const mappedStatus = mapZohoStatus(ticketPayload.status);
+        if (mappedStatus === 'Open') {
+          await recordEvent('IGNORED', { tmsTicketId: existing.id, errorMessage: 'Zoho Desk status update did not map to a terminal TMS status.', retryable: false });
+          return void res.status(200).json({ success: true, status: 'ignored', ticketId: existing.id });
+        }
+        const updated = await dbActions.updateTicket(existing.id, {
+          status: mappedStatus, resolvedAt: mappedStatus === 'Resolved' || mappedStatus === 'Closed' ? receivedAt : null,
+          history: [...existing.history, { id: `hist-${crypto.randomUUID()}`, timestamp: receivedAt, userEmail: 'integration:zoho-desk', action: `Zoho Desk status updated to ${mappedStatus}` }], updatedAt: receivedAt
+        }) || existing;
+        await recordEvent('PROCESSED', { tmsTicketId: updated.id, payloadMetadata: { status: ticketPayload.status } });
+        return void res.status(200).json({ success: true, status: 'updated', ticketId: updated.id });
+      }
       if (existing) {
         await recordEvent('DUPLICATE', { tmsTicketId: existing.id });
         return void res.status(200).json({ success: true, status: 'duplicate', ticketId: existing.id });

@@ -62,4 +62,6 @@ test('Zoho webhook uses a secure callback token and the canonical ticket service
   assert.match(serverSource, /timingSafeEqual/);
   assert.match(zohoServiceSource, /source: 'ZOHO_DESK'/);
   assert.match(serverSource, /findZohoDeskTicketByExternalId/);
+  assert.match(serverSource, /TICKET_STATUS_UPDATE/);
+  assert.match(serverSource, /Zoho Desk status updated to/);
 });
