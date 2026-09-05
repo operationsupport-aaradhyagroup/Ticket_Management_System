@@ -135,7 +135,18 @@ export interface ITicket {
   isEscalated?: boolean;
   lastReminderSentAt?: string | null;
   reminderCount?: number;
-  source?: 'ADMIN' | 'PORTAL' | 'API' | 'PUBLIC_FORM' | 'EMAIL' | 'INTEGRATION';
+  source?: 'ADMIN' | 'PORTAL' | 'API' | 'PUBLIC_FORM' | 'EMAIL' | 'INTEGRATION' | 'ZOHO_DESK';
+  integration?: {
+    provider: 'ZOHO_DESK';
+    externalTicketId: string;
+    externalTicketNumber?: string;
+    externalDepartmentId?: string;
+    externalOrgId?: string;
+    externalChannel?: string;
+    externalAssigneeId?: string;
+    lastSyncedAt?: string;
+    attachmentMetadata?: unknown[];
+  };
   requesterPhone?: string;
   customFields?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
@@ -193,6 +204,35 @@ export interface IGmailIntegrationCredential {
   updatedAt: string;
 }
 
+export interface IZohoDeskSettings {
+  id: 'zoho-desk';
+  enabled: boolean;
+  syncNewTickets: boolean;
+  defaultDepartmentId: string;
+  defaultAssigneeEmail: string;
+  defaultPriority: 'Low' | 'Medium' | 'High' | 'Critical';
+  departmentMappings: Array<{ zohoDepartmentId: string; zohoDepartmentName?: string; tmsDepartmentId: string }>;
+  assigneeMappings: Array<{ zohoAssigneeId: string; tmsUserEmail: string }>;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface IZohoDeskEvent {
+  id: string;
+  provider: 'ZOHO_DESK';
+  eventType: string;
+  externalTicketId: string;
+  externalEventId?: string;
+  organizationId?: string;
+  receivedAt: string;
+  processedAt?: string;
+  processingStatus: 'RECEIVED' | 'PROCESSED' | 'DUPLICATE' | 'IGNORED' | 'FAILED';
+  tmsTicketId?: string;
+  errorMessage?: string;
+  retryable?: boolean;
+  payloadMetadata?: Record<string, unknown>;
+}
+
 export type InboundEmailStatus = 'PROCESSING' | 'CREATED' | 'IGNORED_SUBJECT' | 'DUPLICATE' | 'FAILED' | 'DEFAULT_ASSIGNEE_USED';
 
 export interface IInboundEmailEvent {
@@ -224,6 +264,8 @@ interface IDiskStore {
   emailTicketSettings?: IEmailTicketSettings;
   inboundEmailEvents?: IInboundEmailEvent[];
   gmailIntegrationCredentials?: IGmailIntegrationCredential[];
+  zohoDeskSettings?: IZohoDeskSettings;
+  zohoDeskEvents?: IZohoDeskEvent[];
 }
 
 let diskDb: IDiskStore = {
@@ -243,10 +285,12 @@ let UserSchema: any, DeptSchema: any, CatSchema: any, TicketSchema: any, EmailSc
 let EscalationRuleSchema: any, ApiClientSchema: any, IdempotencySchema: any, ApiAuditSchema: any;
 let EmailTicketSettingsSchema: any, InboundEmailEventSchema: any;
 let GmailIntegrationCredentialSchema: any;
+let ZohoDeskSettingsSchema: any, ZohoDeskEventSchema: any;
 let UserModel: any, DeptModel: any, CatModel: any, TicketModel: any, EmailModel: any, EscalationRuleModel: any;
 let ApiClientModel: any, IdempotencyModel: any, ApiAuditModel: any;
 let EmailTicketSettingsModel: any, InboundEmailEventModel: any;
 let GmailIntegrationCredentialModel: any;
+let ZohoDeskSettingsModel: any, ZohoDeskEventModel: any;
 
 if (useMongo) {
   try {
@@ -299,7 +343,7 @@ if (useMongo) {
       categoryName: { type: String, required: true },
       status: { type: String, enum: ['Open', 'In Progress', 'Resolved', 'Closed'], default: 'Open' },
       priority: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },
-      creatorEmail: { type: String, required: true },
+      creatorEmail: { type: String, default: '' },
       creatorName: { type: String, required: true },
       assignedAgent: { type: String, default: 'Unassigned' },
       assignedAgentEmail: { type: String, default: '' },
@@ -327,7 +371,12 @@ if (useMongo) {
       isEscalated: { type: Boolean, default: false },
       lastReminderSentAt: { type: String, default: null },
       reminderCount: { type: Number, default: 0 },
-      source: { type: String, enum: ['ADMIN', 'PORTAL', 'API', 'PUBLIC_FORM', 'EMAIL', 'INTEGRATION'], default: 'PORTAL', index: true },
+      source: { type: String, enum: ['ADMIN', 'PORTAL', 'API', 'PUBLIC_FORM', 'EMAIL', 'INTEGRATION', 'ZOHO_DESK'], default: 'PORTAL', index: true },
+      integration: {
+        provider: { type: String }, externalTicketId: { type: String }, externalTicketNumber: { type: String },
+        externalDepartmentId: { type: String }, externalOrgId: { type: String }, externalChannel: { type: String },
+        externalAssigneeId: { type: String }, lastSyncedAt: { type: String }, attachmentMetadata: { type: [Schema.Types.Mixed], default: undefined }
+      },
       requesterPhone: { type: String, default: '' },
       customFields: { type: Schema.Types.Mixed, default: undefined },
       metadata: { type: Schema.Types.Mixed, default: undefined },
@@ -357,6 +406,7 @@ if (useMongo) {
       createdAt: { type: String, required: true },
       updatedAt: { type: String, required: true }
     });
+    TicketSchema.index({ source: 1, 'integration.externalTicketId': 1 }, { unique: true, partialFilterExpression: { source: 'ZOHO_DESK', 'integration.externalTicketId': { $type: 'string' } } });
 
     ApiClientSchema = new Schema({
       id: { type: String, unique: true, required: true },
@@ -418,6 +468,18 @@ if (useMongo) {
       connectedAt: { type: String, required: true },
       updatedAt: { type: String, required: true }
     });
+    ZohoDeskSettingsSchema = new Schema({
+      id: { type: String, unique: true, required: true, default: 'zoho-desk' }, enabled: { type: Boolean, default: false }, syncNewTickets: { type: Boolean, default: true },
+      defaultDepartmentId: { type: String, default: '' }, defaultAssigneeEmail: { type: String, default: '' }, defaultPriority: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },
+      departmentMappings: [{ zohoDepartmentId: String, zohoDepartmentName: String, tmsDepartmentId: String }], assigneeMappings: [{ zohoAssigneeId: String, tmsUserEmail: String }],
+      updatedAt: { type: String, required: true }, updatedBy: { type: String, required: true }
+    });
+    ZohoDeskEventSchema = new Schema({
+      id: { type: String, unique: true, required: true }, provider: { type: String, enum: ['ZOHO_DESK'], required: true }, eventType: { type: String, required: true }, externalTicketId: { type: String, default: '', index: true },
+      externalEventId: { type: String, default: '' }, organizationId: { type: String, default: '' }, receivedAt: { type: String, required: true }, processedAt: { type: String, default: '' },
+      processingStatus: { type: String, enum: ['RECEIVED', 'PROCESSED', 'DUPLICATE', 'IGNORED', 'FAILED'], required: true, index: true }, tmsTicketId: { type: String, default: '' },
+      errorMessage: { type: String, default: '' }, retryable: { type: Boolean, default: false }, payloadMetadata: { type: Schema.Types.Mixed, default: undefined }
+    });
 
     UserModel = mongoose.models.User || mongoose.model('User', UserSchema);
     DeptModel = mongoose.models.Department || mongoose.model('Department', DeptSchema);
@@ -431,6 +493,8 @@ if (useMongo) {
     EmailTicketSettingsModel = mongoose.models.EmailTicketSettings || mongoose.model('EmailTicketSettings', EmailTicketSettingsSchema);
     InboundEmailEventModel = mongoose.models.InboundEmailEvent || mongoose.model('InboundEmailEvent', InboundEmailEventSchema);
     GmailIntegrationCredentialModel = mongoose.models.GmailIntegrationCredential || mongoose.model('GmailIntegrationCredential', GmailIntegrationCredentialSchema);
+    ZohoDeskSettingsModel = mongoose.models.ZohoDeskSettings || mongoose.model('ZohoDeskSettings', ZohoDeskSettingsSchema);
+    ZohoDeskEventModel = mongoose.models.ZohoDeskEvent || mongoose.model('ZohoDeskEvent', ZohoDeskEventSchema);
   } catch (err) {
     console.warn('Mongoose Schemas failed to prepare: ', err);
   }
@@ -525,6 +589,8 @@ function loadFromDisk() {
       if (!diskDb.apiAuditEvents) diskDb.apiAuditEvents = [];
       if (!diskDb.inboundEmailEvents) diskDb.inboundEmailEvents = [];
       if (!diskDb.gmailIntegrationCredentials) diskDb.gmailIntegrationCredentials = [];
+      if (!diskDb.zohoDeskEvents) diskDb.zohoDeskEvents = [];
+      if (!diskDb.zohoDeskSettings) diskDb.zohoDeskSettings = { id: 'zoho-desk', enabled: false, syncNewTickets: true, defaultDepartmentId: '', defaultAssigneeEmail: '', defaultPriority: 'Medium', departmentMappings: [], assigneeMappings: [], updatedAt: '', updatedBy: 'system' };
       if (!diskDb.emailTicketSettings) {
         diskDb.emailTicketSettings = {
           id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
@@ -537,6 +603,8 @@ function loadFromDisk() {
         users: [], departments: [], categories: [], tickets: [], emails: [], apiClients: [], idempotencyRecords: [], apiAuditEvents: [],
         inboundEmailEvents: [],
         gmailIntegrationCredentials: [],
+        zohoDeskEvents: [],
+        zohoDeskSettings: { id: 'zoho-desk', enabled: false, syncNewTickets: true, defaultDepartmentId: '', defaultAssigneeEmail: '', defaultPriority: 'Medium', departmentMappings: [], assigneeMappings: [], updatedAt: '', updatedBy: 'system' },
         emailTicketSettings: {
           id: 'email-ticket', enabled: false, subjectPrefix: 'Resolve this Ticket --',
           defaultAssigneeEmail: 'operation_support@kisansuvidha.com', updatedAt: '', updatedBy: 'system'
@@ -1368,6 +1436,11 @@ export const dbActions = {
     if (isMongoConnected) return await TicketModel.findOne({ id: ticketId }).lean();
     return diskDb.tickets.find(ticket => ticket.id === ticketId) || null;
   },
+  findZohoDeskTicketByExternalId: async (externalTicketId: string): Promise<ITicket | null> => {
+    const normalizedId = externalTicketId.trim();
+    if (isMongoConnected) return await TicketModel.findOne({ source: 'ZOHO_DESK', 'integration.externalTicketId': normalizedId }).lean();
+    return diskDb.tickets.find((ticket) => ticket.source === 'ZOHO_DESK' && ticket.integration?.externalTicketId === normalizedId) || null;
+  },
 
   listApiClients: async (): Promise<IApiClient[]> => {
     if (isMongoConnected) return await ApiClientModel.find({}).select('+keyHash').sort({ createdAt: -1 }).lean();
@@ -1494,6 +1567,38 @@ export const dbActions = {
     if (isMongoConnected) { await GmailIntegrationCredentialModel.deleteOne({ id }); return; }
     diskDb.gmailIntegrationCredentials = (diskDb.gmailIntegrationCredentials || []).filter((item) => item.id !== id);
     saveToDisk();
+  },
+  getZohoDeskSettings: async (): Promise<IZohoDeskSettings> => {
+    const defaults: IZohoDeskSettings = { id: 'zoho-desk', enabled: false, syncNewTickets: true, defaultDepartmentId: '', defaultAssigneeEmail: '', defaultPriority: 'Medium', departmentMappings: [], assigneeMappings: [], updatedAt: '', updatedBy: 'system' };
+    if (isMongoConnected) {
+      const settings = await ZohoDeskSettingsModel.findOne({ id: 'zoho-desk' }).lean();
+      return { ...defaults, ...(settings || {}) };
+    }
+    return { ...defaults, ...(diskDb.zohoDeskSettings || {}) };
+  },
+  saveZohoDeskSettings: async (settings: IZohoDeskSettings): Promise<IZohoDeskSettings> => {
+    const normalized: IZohoDeskSettings = {
+      ...settings, id: 'zoho-desk', defaultDepartmentId: settings.defaultDepartmentId.trim(), defaultAssigneeEmail: settings.defaultAssigneeEmail.toLowerCase().trim(),
+      departmentMappings: (settings.departmentMappings || []).filter((mapping) => mapping.zohoDepartmentId?.trim() && mapping.tmsDepartmentId?.trim()).map((mapping) => ({ zohoDepartmentId: mapping.zohoDepartmentId.trim(), zohoDepartmentName: mapping.zohoDepartmentName?.trim() || '', tmsDepartmentId: mapping.tmsDepartmentId.trim() })),
+      assigneeMappings: (settings.assigneeMappings || []).filter((mapping) => mapping.zohoAssigneeId?.trim() && mapping.tmsUserEmail?.trim()).map((mapping) => ({ zohoAssigneeId: mapping.zohoAssigneeId.trim(), tmsUserEmail: mapping.tmsUserEmail.toLowerCase().trim() }))
+    };
+    if (isMongoConnected) return await ZohoDeskSettingsModel.findOneAndUpdate({ id: 'zoho-desk' }, { $set: normalized }, { new: true, upsert: true, setDefaultsOnInsert: true }).lean();
+    diskDb.zohoDeskSettings = normalized;
+    saveToDisk();
+    return normalized;
+  },
+  createZohoDeskEvent: async (event: IZohoDeskEvent): Promise<IZohoDeskEvent> => {
+    if (isMongoConnected) return (await ZohoDeskEventModel.create(event)).toObject();
+    diskDb.zohoDeskEvents = diskDb.zohoDeskEvents || [];
+    diskDb.zohoDeskEvents.unshift(event);
+    diskDb.zohoDeskEvents = diskDb.zohoDeskEvents.slice(0, 500);
+    saveToDisk();
+    return event;
+  },
+  listZohoDeskEvents: async (limit = 100): Promise<IZohoDeskEvent[]> => {
+    const safeLimit = Math.min(500, Math.max(1, limit));
+    if (isMongoConnected) return await ZohoDeskEventModel.find({}).sort({ receivedAt: -1 }).limit(safeLimit).lean();
+    return [...(diskDb.zohoDeskEvents || [])].sort((firstEvent, secondEvent) => secondEvent.receivedAt.localeCompare(firstEvent.receivedAt)).slice(0, safeLimit);
   },
 
   // --- ESCALATION RULES SECTION ---

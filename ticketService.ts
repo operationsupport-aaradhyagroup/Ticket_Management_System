@@ -1,6 +1,6 @@
 import { IComplaintCategory, IDepartment, ITicket, IUser } from './serverDB';
 
-export type TicketSource = 'ADMIN' | 'PORTAL' | 'API' | 'PUBLIC_FORM' | 'EMAIL' | 'INTEGRATION';
+export type TicketSource = 'ADMIN' | 'PORTAL' | 'API' | 'PUBLIC_FORM' | 'EMAIL' | 'INTEGRATION' | 'ZOHO_DESK';
 
 export interface CreateTicketInput {
   subject: string;
@@ -16,6 +16,7 @@ export interface CreateTicketInput {
   metadata?: Record<string, unknown>;
   createdBy?: string;
   integrationClientId?: string;
+  integration?: ITicket['integration'];
 }
 
 export class TicketValidationError extends Error {
@@ -70,8 +71,8 @@ export async function createTicket(input: CreateTicketInput, deps: TicketService
   const errors: string[] = [];
   if (subject.length < 3) errors.push('subject must contain at least 3 characters.');
   if (description.length < 3) errors.push('description must contain at least 3 characters.');
-  if (!requesterEmail || !isEmail(requesterEmail)) errors.push('requester.email must be a valid email address.');
-  if (!requesterName) errors.push('requester.name is required.');
+  if (input.source !== 'ZOHO_DESK' && (!requesterEmail || !isEmail(requesterEmail))) errors.push('requester.email must be a valid email address.');
+  if (input.source !== 'ZOHO_DESK' && !requesterName) errors.push('requester.name is required.');
   const normalizedPriority = allowedPriorities[String(input.priority || 'medium').toLowerCase()];
   if (!normalizedPriority) errors.push('priority must be low, medium, high, or critical.');
   if (errors.length) throw new TicketValidationError('Validation failed.', errors);
@@ -126,7 +127,7 @@ export async function createTicket(input: CreateTicketInput, deps: TicketService
     status: 'Open',
     priority: normalizedPriority,
     creatorEmail: requesterEmail,
-    creatorName: requesterName,
+    creatorName: requesterName || 'Zoho Desk Requester',
     requesterPhone,
     assignedAgent: assignedUser?.name || 'Unassigned',
     assignedAgentEmail: assignedUser?.email || '',
@@ -143,6 +144,7 @@ export async function createTicket(input: CreateTicketInput, deps: TicketService
     metadata: safeRecord(input.metadata, 16_384),
     createdBy: cleanText(input.createdBy, 254),
     integrationClientId: cleanText(input.integrationClientId, 120),
+    integration: input.integration,
     remarks: [],
     history: [{
       id: `hist-${Date.now()}`,

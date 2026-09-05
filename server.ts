@@ -6,10 +6,11 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
-import { initializeDb, dbActions, IUser, IDepartment, IComplaintCategory, ITicket, ISentEmail, IEscalationRule, IApiClient, IGmailIntegrationCredential } from './serverDB';
+import { initializeDb, dbActions, IUser, IDepartment, IComplaintCategory, ITicket, ISentEmail, IEscalationRule, IApiClient, IGmailIntegrationCredential, IZohoDeskSettings } from './serverDB';
 import { createTicket, TicketValidationError, toPublicTicket, TicketSource } from './ticketService';
 import { API_PERMISSIONS, ApiPermission, extractKeyPrefix, generateApiKey, hashApiKey, safelyMatchesApiKey, SlidingWindowRateLimiter } from './integrationSecurity';
 import { InboundEmail, processInboundEmail } from './emailTicketService';
+import { getZohoEventType, getZohoTicketPayload, mapZohoStatus, mapZohoTicketToTmsInput, verifyZohoDeskWebhookJwt, ZohoWebhookError } from './zohoDeskService';
 
 // Load environmental properties
 dotenv.config();
@@ -37,6 +38,9 @@ const GMAIL_REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || `${APP_URL.replace(
 const GMAIL_INBOX_EMAIL = (process.env.GMAIL_INBOX_EMAIL || 'operation_support@kisansuvidha.com').toLowerCase();
 const GMAIL_SYNC_SECRET = process.env.GMAIL_SYNC_SECRET || '';
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || '';
+const ZOHO_DESK_ORG_ID = process.env.ZOHO_DESK_ORG_ID || '';
+const ZOHO_DESK_WEBHOOK_ID = process.env.ZOHO_DESK_WEBHOOK_ID || '';
+const ZOHO_DESK_INTEGRATION_ENABLED = process.env.ZOHO_DESK_INTEGRATION_ENABLED === 'true';
 const integrationRateLimiter = new SlidingWindowRateLimiter(API_RATE_LIMIT_WINDOW_MS, API_RATE_LIMIT_MAX);
 const publicRateLimiter = new SlidingWindowRateLimiter(API_RATE_LIMIT_WINDOW_MS, PUBLIC_TICKET_RATE_LIMIT_MAX);
 
@@ -778,6 +782,98 @@ async function startServer() {
       console.warn(`[Email Ticket] ${code}`, context);
     }
   };
+
+  const getZohoDeskPublicStatus = async () => {
+    const settings = await dbActions.getZohoDeskSettings();
+    return {
+      configured: Boolean(ZOHO_DESK_ORG_ID && ZOHO_DESK_WEBHOOK_ID),
+      organizationIdConfigured: Boolean(ZOHO_DESK_ORG_ID), webhookIdConfigured: Boolean(ZOHO_DESK_WEBHOOK_ID),
+      webhookUrl: `${APP_URL.replace(/\/$/, '')}/api/integrations/zoho-desk/webhook`, settings
+    };
+  };
+
+  app.get('/api/admin/integrations/zoho-desk', authenticateToken, requireAdmin, async (_req, res) => {
+    const [status, events] = await Promise.all([getZohoDeskPublicStatus(), dbActions.listZohoDeskEvents(50)]);
+    const statistics = events.reduce((counts: Record<string, number>, event) => ({ ...counts, [event.processingStatus]: (counts[event.processingStatus] || 0) + 1 }), {});
+    res.json({ success: true, data: { ...status, events, statistics } });
+  });
+
+  app.put('/api/admin/integrations/zoho-desk', authenticateToken, requireAdmin, async (req, res) => {
+    const current = await dbActions.getZohoDeskSettings();
+    const input = req.body || {};
+    const settings: IZohoDeskSettings = {
+      ...current, enabled: Boolean(input.enabled), syncNewTickets: input.syncNewTickets !== false,
+      defaultDepartmentId: String(input.defaultDepartmentId || ''), defaultAssigneeEmail: String(input.defaultAssigneeEmail || ''),
+      defaultPriority: ['Low', 'Medium', 'High', 'Critical'].includes(input.defaultPriority) ? input.defaultPriority : 'Medium',
+      departmentMappings: Array.isArray(input.departmentMappings) ? input.departmentMappings : [], assigneeMappings: Array.isArray(input.assigneeMappings) ? input.assigneeMappings : [],
+      updatedAt: new Date().toISOString(), updatedBy: req.user!.email
+    };
+    const saved = await dbActions.saveZohoDeskSettings(settings);
+    res.json({ success: true, data: saved });
+  });
+
+  app.get('/api/integrations/zoho-desk/webhook', (_req, res) => {
+    res.status(200).json({ success: true, service: 'zoho-desk-webhook' });
+  });
+
+  app.post('/api/integrations/zoho-desk/webhook', async (req, res) => {
+    const receivedAt = new Date().toISOString();
+    let externalTicketId = '';
+    let eventType = '';
+    const recordEvent = async (processingStatus: 'RECEIVED' | 'PROCESSED' | 'DUPLICATE' | 'IGNORED' | 'FAILED', values: Record<string, unknown> = {}) => {
+      try {
+        await dbActions.createZohoDeskEvent({ id: `zoho-${crypto.randomUUID()}`, provider: 'ZOHO_DESK', eventType, externalTicketId, receivedAt, processingStatus, ...values });
+      } catch (error) {
+        console.warn('Zoho Desk integration event log failed', error instanceof Error ? error.message : 'unknown error');
+      }
+    };
+    try {
+      await verifyZohoDeskWebhookJwt(String(req.header('X-ZDesk-JWT') || ''), ZOHO_DESK_ORG_ID, ZOHO_DESK_WEBHOOK_ID);
+      eventType = getZohoEventType(req.body);
+      const ticketPayload = getZohoTicketPayload(req.body);
+      externalTicketId = String(ticketPayload.id || ticketPayload.ticketId || '').trim();
+      if (eventType !== 'TICKET_ADD') {
+        await recordEvent('IGNORED', { payloadMetadata: { eventType } });
+        return void res.status(200).json({ success: true, status: 'ignored' });
+      }
+      if (!externalTicketId) {
+        await recordEvent('FAILED', { errorMessage: 'Zoho ticket ID is missing.', retryable: false });
+        return void res.status(400).json({ success: false, error: 'Zoho ticket ID is required.' });
+      }
+      const settings = await dbActions.getZohoDeskSettings();
+      if (!ZOHO_DESK_INTEGRATION_ENABLED || !settings.enabled || !settings.syncNewTickets) {
+        await recordEvent('IGNORED', { payloadMetadata: { reason: 'integration_disabled' } });
+        return void res.status(200).json({ success: true, status: 'ignored' });
+      }
+      const existing = await dbActions.findZohoDeskTicketByExternalId(externalTicketId);
+      if (existing) {
+        await recordEvent('DUPLICATE', { tmsTicketId: existing.id });
+        return void res.status(200).json({ success: true, status: 'duplicate', ticketId: existing.id });
+      }
+      const [departments, users] = await Promise.all([dbActions.getDepartments(), dbActions.getUsers()]);
+      const input = mapZohoTicketToTmsInput(ticketPayload, settings, departments, users);
+      const created = await createTicket(input, ticketServiceDependencies);
+      const mappedStatus = mapZohoStatus(ticketPayload.status);
+      const finalized = mappedStatus === 'Open' ? created : await dbActions.updateTicket(created.id, {
+        status: mappedStatus, resolvedAt: mappedStatus === 'Resolved' || mappedStatus === 'Closed' ? receivedAt : null,
+        history: [...created.history, { id: `hist-${crypto.randomUUID()}`, timestamp: receivedAt, userEmail: 'integration:zoho-desk', action: `Zoho Desk status mapped to ${mappedStatus}` }], updatedAt: receivedAt
+      }) || created;
+      await recordEvent('PROCESSED', { tmsTicketId: finalized.id, organizationId: input.integration?.externalOrgId, payloadMetadata: { ticketNumber: input.integration?.externalTicketNumber, departmentId: input.integration?.externalDepartmentId } });
+      return void res.status(200).json({ success: true, status: 'created', ticketId: finalized.id });
+    } catch (error: any) {
+      const duplicateKey = error?.code === 11000 || String(error?.message || '').includes('E11000');
+      if (duplicateKey && externalTicketId) {
+        const existing = await dbActions.findZohoDeskTicketByExternalId(externalTicketId);
+        if (existing) {
+          await recordEvent('DUPLICATE', { tmsTicketId: existing.id });
+          return void res.status(200).json({ success: true, status: 'duplicate', ticketId: existing.id });
+        }
+      }
+      const statusCode = error instanceof ZohoWebhookError ? error.statusCode : error instanceof TicketValidationError ? 400 : 500;
+      await recordEvent('FAILED', { errorMessage: error instanceof Error ? error.message : 'Zoho webhook processing failed.', retryable: statusCode >= 500 });
+      return void res.status(statusCode).json({ success: false, error: statusCode === 500 ? 'Zoho webhook processing failed.' : error.message });
+    }
+  });
 
   const runReminderSweep = async () => {
     if (!ONESIGNAL_PUSH_ENABLED || !ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) return;

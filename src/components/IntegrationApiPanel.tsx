@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { KeyRound, Mail } from 'lucide-react';
+import { KeyRound, Mail, Webhook } from 'lucide-react';
 
 interface IntegrationApiPanelProps { token: string; }
 
@@ -22,24 +22,40 @@ export default function IntegrationApiPanel({ token }: IntegrationApiPanelProps)
   const [gmail, setGmail] = useState<{ configured: boolean; mailboxes: Array<{ id: string; email: string; userEmail: string }> }>({ configured: false, mailboxes: [] });
   const [gmailStatus, setGmailStatus] = useState('');
   const [syncingGmail, setSyncingGmail] = useState(false);
+  const [zoho, setZoho] = useState<any>(null);
+  const [zohoStatus, setZohoStatus] = useState('');
 
   const loadData = async () => {
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const [clientsResponse, settingsResponse, logsResponse, gmailResponse] = await Promise.all([
-        fetch('/api/admin/api-clients', { headers }), fetch('/api/admin/email-ticket/settings', { headers }), fetch('/api/admin/email-ticket/logs', { headers }), fetch('/api/admin/integrations/gmail/status', { headers })
+      const [clientsResponse, settingsResponse, logsResponse, gmailResponse, zohoResponse] = await Promise.all([
+        fetch('/api/admin/api-clients', { headers }), fetch('/api/admin/email-ticket/settings', { headers }), fetch('/api/admin/email-ticket/logs', { headers }), fetch('/api/admin/integrations/gmail/status', { headers }), fetch('/api/admin/integrations/zoho-desk', { headers })
       ]);
-      const [clients, settings, logs, gmailData] = await Promise.all([clientsResponse.json(), settingsResponse.json(), logsResponse.json(), gmailResponse.json()]);
-      if (!clientsResponse.ok || !settingsResponse.ok || !logsResponse.ok || !gmailResponse.ok) throw new Error(clients.error || settings.error || logs.error || gmailData.error || 'Integration settings could not be loaded.');
+      const [clients, settings, logs, gmailData, zohoData] = await Promise.all([clientsResponse.json(), settingsResponse.json(), logsResponse.json(), gmailResponse.json(), zohoResponse.json()]);
+      if (!clientsResponse.ok || !settingsResponse.ok || !logsResponse.ok || !gmailResponse.ok || !zohoResponse.ok) throw new Error(clients.error || settings.error || logs.error || gmailData.error || zohoData.error || 'Integration settings could not be loaded.');
       setApiClients(clients.data || []);
       setEmailSettings(settings.data);
       setEmailLogs(logs.data || []);
       setGmail(gmailData.data);
+      setZoho(zohoData.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Integration settings could not be loaded.';
       setApiStatus(message);
       setEmailStatus(message);
     }
+  };
+
+  const saveZohoSettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!zoho) return;
+    setZohoStatus('');
+    try {
+      const response = await fetch('/api/admin/integrations/zoho-desk', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(zoho.settings) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Zoho Desk settings could not be saved.');
+      setZoho((current: any) => ({ ...current, settings: data.data }));
+      setZohoStatus('Zoho Desk settings saved.');
+    } catch (error) { setZohoStatus(error instanceof Error ? error.message : 'Zoho Desk settings could not be saved.'); }
   };
 
   useEffect(() => { void loadData(); }, [token]);
@@ -108,6 +124,15 @@ export default function IntegrationApiPanel({ token }: IntegrationApiPanelProps)
       {emailStatus && <p className="rounded-xl border border-sky-100 bg-sky-50 p-3 text-xs text-sky-800">{emailStatus}</p>}
       <form onSubmit={saveEmailSettings} className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4"><label className="flex items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={emailSettings.enabled} onChange={(event) => setEmailSettings((current) => ({ ...current, enabled: event.target.checked }))} />Enable Email Ticket Creation</label><label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Subject Prefix<input required value={emailSettings.subjectPrefix} onChange={(event) => setEmailSettings((current) => ({ ...current, subjectPrefix: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-normal normal-case tracking-normal" /></label><label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Default Assignee Email<input type="email" value={emailSettings.defaultAssigneeEmail} onChange={(event) => setEmailSettings((current) => ({ ...current, defaultAssigneeEmail: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-normal normal-case tracking-normal" /></label><button type="submit" className="rounded-xl bg-sky-600 px-4 py-2.5 text-xs font-bold text-white">Save Email Settings</button></form>
       <div className="overflow-x-auto rounded-2xl border border-slate-100"><table className="min-w-full text-left text-[10px] text-slate-600"><thead className="bg-slate-50 uppercase tracking-wider text-slate-400"><tr><th className="p-2">Received</th><th className="p-2">From</th><th className="p-2">To</th><th className="p-2">Subject</th><th className="p-2">Status</th><th className="p-2">Assigned</th><th className="p-2">Ticket</th><th className="p-2">Error</th></tr></thead><tbody>{emailLogs.length === 0 ? <tr><td colSpan={8} className="p-3 text-center text-slate-400">No inbound email events.</td></tr> : emailLogs.map((log) => <tr key={log.messageId} className="border-t border-slate-100 align-top"><td className="p-2 whitespace-nowrap">{formatDateTime(log.receivedAt)}</td><td className="p-2">{log.fromEmail}</td><td className="p-2">{(log.originalToEmails?.length ? log.originalToEmails : log.toEmails || []).join(', ')}</td><td className="p-2">{log.subject}</td><td className="p-2 font-semibold">{log.status}</td><td className="p-2">{log.assignedAgentEmail || 'Unassigned'}</td><td className="p-2">{log.ticketId || '—'}</td><td className="p-2 text-rose-600">{log.errorMessage || log.errorCode || '—'}</td></tr>)}</tbody></table></div>
+    </section>
+    <section className="xl:col-span-2 rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+      <div className="flex items-center gap-3 border-b border-slate-100 pb-3"><div className="rounded-2xl bg-blue-50 p-2 text-blue-600"><Webhook className="h-5 w-5" /></div><div><h2 className="text-sm font-bold text-slate-800">Zoho Desk Ticket Webhook</h2><p className="text-[11px] text-slate-400">One-way new-ticket intake from Zoho Desk. Existing Gmail sync remains separate.</p></div></div>
+      {!zoho ? <p className="text-xs text-slate-400">Loading Zoho Desk configuration…</p> : <>
+        <div className="grid gap-3 md:grid-cols-3 text-xs"><div className={`rounded-xl border p-3 ${zoho.configured ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-amber-100 bg-amber-50 text-amber-800'}`}><b>Webhook verification</b><p className="mt-1">{zoho.configured ? 'Organization and webhook IDs are configured.' : 'Add Zoho environment variables on Render.'}</p></div><div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-700"><b>Webhook endpoint</b><code className="mt-1 block break-all text-[10px]">{zoho.webhookUrl}</code></div><div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-700"><b>Recent events</b><p className="mt-1">Created: {zoho.statistics?.PROCESSED || 0} · Duplicates: {zoho.statistics?.DUPLICATE || 0} · Failed: {zoho.statistics?.FAILED || 0}</p></div></div>
+        {zohoStatus && <p className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">{zohoStatus}</p>}
+        <form onSubmit={saveZohoSettings} className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4"><label className="flex items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={zoho.settings.enabled} onChange={(event) => setZoho((current: any) => ({ ...current, settings: { ...current.settings, enabled: event.target.checked } }))} />Enable Zoho Desk ticket intake</label><div className="grid gap-3 md:grid-cols-3"><label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Default TMS Department<input value={zoho.settings.defaultDepartmentId} onChange={(event) => setZoho((current: any) => ({ ...current, settings: { ...current.settings, defaultDepartmentId: event.target.value } }))} placeholder="TMS department ID" className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-normal normal-case tracking-normal" /></label><label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Default Assignee Email<input type="email" value={zoho.settings.defaultAssigneeEmail} onChange={(event) => setZoho((current: any) => ({ ...current, settings: { ...current.settings, defaultAssigneeEmail: event.target.value } }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-normal normal-case tracking-normal" /></label><label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Default Priority<select value={zoho.settings.defaultPriority} onChange={(event) => setZoho((current: any) => ({ ...current, settings: { ...current.settings, defaultPriority: event.target.value } }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-normal normal-case tracking-normal"><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label></div><label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Department mappings (one per line: Zoho Department ID = TMS Department ID)<textarea value={(zoho.settings.departmentMappings || []).map((mapping: any) => `${mapping.zohoDepartmentId}=${mapping.tmsDepartmentId}`).join('\n')} onChange={(event) => setZoho((current: any) => ({ ...current, settings: { ...current.settings, departmentMappings: event.target.value.split('\n').map((line) => line.split('=').map((part) => part.trim())).filter((parts) => parts[0] && parts[1]).map(([zohoDepartmentId, tmsDepartmentId]) => ({ zohoDepartmentId, tmsDepartmentId })) } }))} placeholder="31138000000006907=dept-it" className="mt-1.5 min-h-20 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-normal normal-case tracking-normal" /></label><button type="submit" className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white">Save Zoho Desk Settings</button></form>
+        <div className="overflow-x-auto rounded-2xl border border-slate-100"><table className="min-w-full text-left text-[10px] text-slate-600"><thead className="bg-slate-50 uppercase tracking-wider text-slate-400"><tr><th className="p-2">Received</th><th className="p-2">Event</th><th className="p-2">Zoho Ticket</th><th className="p-2">Status</th><th className="p-2">TMS Ticket</th><th className="p-2">Error</th></tr></thead><tbody>{zoho.events?.length ? zoho.events.map((event: any) => <tr key={event.id} className="border-t border-slate-100"><td className="p-2">{formatDateTime(event.receivedAt)}</td><td className="p-2">{event.eventType}</td><td className="p-2">{event.externalTicketId || '—'}</td><td className="p-2 font-semibold">{event.processingStatus}</td><td className="p-2">{event.tmsTicketId || '—'}</td><td className="p-2 text-rose-600">{event.errorMessage || '—'}</td></tr>) : <tr><td colSpan={6} className="p-3 text-center text-slate-400">No Zoho Desk webhook events.</td></tr>}</tbody></table></div>
+      </>}
     </section>
   </div>;
 }
