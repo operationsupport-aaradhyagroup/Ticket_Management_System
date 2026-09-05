@@ -832,7 +832,13 @@ async function startServer() {
       const expectedToken = Buffer.from(ZOHO_DESK_WEBHOOK_SECRET);
       const receivedToken = Buffer.from(suppliedToken);
       const validToken = expectedToken.length > 0 && expectedToken.length === receivedToken.length && crypto.timingSafeEqual(expectedToken, receivedToken);
-      if (!validToken) return void res.status(200).json({ success: true, status: 'ignored' });
+      if (!validToken) {
+        eventType = getZohoEventType(req.body);
+        const rejectedTicketPayload = getZohoTicketPayload(req.body);
+        externalTicketId = String(rejectedTicketPayload.id || rejectedTicketPayload.ticketId || '').trim();
+        if (eventType || externalTicketId) await recordEvent('IGNORED', { errorMessage: 'Zoho callback token did not match the configured secret.', retryable: false });
+        return void res.status(200).json({ success: true, status: 'ignored' });
+      }
       eventType = getZohoEventType(req.body);
       const ticketPayload = getZohoTicketPayload(req.body);
       externalTicketId = String(ticketPayload.id || ticketPayload.ticketId || '').trim();
