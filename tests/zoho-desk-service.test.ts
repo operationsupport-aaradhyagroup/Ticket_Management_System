@@ -31,6 +31,12 @@ test('Zoho webhook parser accepts form-encoded JSON payloads', () => {
   assert.equal(getZohoTicketPayload(body).id, '80003');
 });
 
+test('Zoho webhook parser accepts raw form payloads', () => {
+  const body = Buffer.from(`data=${encodeURIComponent(JSON.stringify({ eventType: 'Ticket Add', id: '80004', subject: 'Network issue' }))}`);
+  assert.equal(getZohoEventType(body), 'TICKET_ADD');
+  assert.equal(getZohoTicketPayload(body).id, '80004');
+});
+
 test('Zoho mapper preserves external ticket metadata and maps department/assignee', () => {
   const input = mapZohoTicketToTmsInput({ id: '80001', ticketNumber: '101', subject: 'Printer issue', description: 'Printer is unavailable.', departmentId: 'zoho-it', assigneeEmail: 'agent@example.com', contact: { fullName: 'Rahul', email: 'rahul@example.com' } }, settings, departments, users);
   assert.equal(input.source, 'ZOHO_DESK');

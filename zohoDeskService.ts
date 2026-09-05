@@ -8,10 +8,15 @@ const asText = (value: unknown, max = 10_000) => String(value ?? '').replace(/[\
 const firstText = (...values: unknown[]) => values.map((value) => asText(value)).find(Boolean) || '';
 
 const asPayloadRecord = (value: unknown): UnknownRecord => {
-  if (typeof value === 'string' && value.length <= 256_000) {
-    try { return asRecord(JSON.parse(value)); } catch { return {}; }
+  const serialized = Buffer.isBuffer(value) ? value.toString('utf8') : value;
+  if (typeof serialized === 'string' && serialized.length <= 256_000) {
+    try { return asRecord(JSON.parse(serialized)); } catch {
+      const parameters = new URLSearchParams(serialized);
+      const entries = [...parameters.entries()];
+      return entries.length ? Object.fromEntries(entries) : {};
+    }
   }
-  return asRecord(value);
+  return asRecord(serialized);
 };
 
 const payloadCandidates = (body: unknown) => {

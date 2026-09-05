@@ -817,7 +817,7 @@ async function startServer() {
     res.status(200).json({ success: true, service: 'zoho-desk-webhook' });
   });
 
-  app.post(['/api/integrations/zoho-desk/webhook', '/api/integrations/zoho-desk/webhook/:token'], async (req, res) => {
+  app.post(['/api/integrations/zoho-desk/webhook', '/api/integrations/zoho-desk/webhook/:token'], express.raw({ type: () => true, limit: '256kb' }), async (req, res) => {
     const receivedAt = new Date().toISOString();
     let externalTicketId = '';
     let eventType = '';
