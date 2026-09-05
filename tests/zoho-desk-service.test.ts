@@ -39,9 +39,10 @@ test('Zoho mapper uses configured department and assignee fallbacks', () => {
   assert.equal(input.assignedTo, 'fallback@example.com');
 });
 
-test('Zoho webhook uses JWT verification and the canonical ticket service', () => {
+test('Zoho webhook uses a secure callback token and the canonical ticket service', () => {
   assert.match(serverSource, /post\('\/api\/integrations\/zoho-desk\/webhook'/);
-  assert.match(serverSource, /verifyZohoDeskWebhookJwt/);
+  assert.match(serverSource, /ZOHO_DESK_WEBHOOK_SECRET/);
+  assert.match(serverSource, /timingSafeEqual/);
   assert.match(zohoServiceSource, /source: 'ZOHO_DESK'/);
   assert.match(serverSource, /findZohoDeskTicketByExternalId/);
 });
