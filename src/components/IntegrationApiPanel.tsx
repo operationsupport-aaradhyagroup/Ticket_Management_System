@@ -24,6 +24,8 @@ export default function IntegrationApiPanel({ token }: IntegrationApiPanelProps)
   const [syncingGmail, setSyncingGmail] = useState(false);
   const [zoho, setZoho] = useState<any>(null);
   const [zohoStatus, setZohoStatus] = useState('');
+  const [portalName, setPortalName] = useState('');
+  const [portalAssigneeEmail, setPortalAssigneeEmail] = useState('');
 
   const loadData = async () => {
     try {
@@ -56,6 +58,15 @@ export default function IntegrationApiPanel({ token }: IntegrationApiPanelProps)
       setZoho((current: any) => ({ ...current, settings: data.data }));
       setZohoStatus('Zoho Desk settings saved.');
     } catch (error) { setZohoStatus(error instanceof Error ? error.message : 'Zoho Desk settings could not be saved.'); }
+  };
+
+  const addPortalAssigneeMapping = () => {
+    const normalizedPortal = portalName.trim();
+    const normalizedEmail = portalAssigneeEmail.trim().toLowerCase();
+    if (!normalizedPortal || !normalizedEmail || !zoho) return;
+    setZoho((current: any) => ({ ...current, settings: { ...current.settings, portalAssigneeMappings: [...(current.settings.portalAssigneeMappings || []).filter((mapping: any) => mapping.zohoPortal.toLowerCase() !== normalizedPortal.toLowerCase()), { zohoPortal: normalizedPortal, tmsUserEmail: normalizedEmail }] } }));
+    setPortalName('');
+    setPortalAssigneeEmail('');
   };
 
   useEffect(() => { void loadData(); }, [token]);
@@ -111,6 +122,7 @@ export default function IntegrationApiPanel({ token }: IntegrationApiPanelProps)
   };
 
   return <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+    {zoho && <section className="order-first xl:col-span-2 rounded-[28px] border border-blue-200 bg-blue-50/40 p-5 shadow-[0_18px_44px_rgba(15,23,42,0.06)]"><div className="mb-4"><h2 className="text-sm font-bold text-slate-800">Portal Assignment Routes</h2><p className="mt-1 text-xs text-slate-500">Manually assign each Zoho Desk portal to a TMS employee email.</p></div><div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]"><input value={portalName} onChange={(event) => setPortalName(event.target.value)} placeholder="Zoho Desk portal, e.g. Bhoodhan" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs" /><input type="email" value={portalAssigneeEmail} onChange={(event) => setPortalAssigneeEmail(event.target.value)} placeholder="TMS employee email" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs" /><button type="button" onClick={addPortalAssigneeMapping} className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white">Add Mapping</button></div><div className="mt-3 space-y-2">{(zoho.settings.portalAssigneeMappings || []).length === 0 ? <p className="text-xs text-slate-500">No portal routes added yet.</p> : (zoho.settings.portalAssigneeMappings || []).map((mapping: any) => <div key={mapping.zohoPortal} className="flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-white px-3 py-2 text-xs"><span><b>{mapping.zohoPortal}</b> → {mapping.tmsUserEmail}</span><button type="button" onClick={() => setZoho((current: any) => ({ ...current, settings: { ...current.settings, portalAssigneeMappings: current.settings.portalAssigneeMappings.filter((item: any) => item.zohoPortal !== mapping.zohoPortal) } }))} className="font-bold text-rose-600">Remove</button></div>)}</div><button type="button" onClick={() => void saveZohoSettings({ preventDefault: () => undefined } as React.FormEvent)} className="mt-4 rounded-xl bg-slate-800 px-4 py-2.5 text-xs font-bold text-white">Save Portal Routes</button></section>}
     <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
       <div className="flex items-center gap-3 border-b border-slate-100 pb-3"><div className="rounded-2xl bg-indigo-50 p-2 text-indigo-600"><KeyRound className="h-5 w-5" /></div><div><h2 className="text-sm font-bold text-slate-800">Developer API Access</h2><p className="text-[11px] text-slate-400">Issue and manage secure integration credentials.</p></div></div>
       {apiStatus && <p className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs text-indigo-800">{apiStatus}</p>}
