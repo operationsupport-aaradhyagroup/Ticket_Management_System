@@ -739,6 +739,7 @@ declare global {
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '256kb' }));
+  app.use(express.urlencoded({ extended: true, limit: '256kb' }));
   app.use((error: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (error instanceof SyntaxError && 'body' in error) {
       res.status(400).json({ error: 'Invalid JSON payload sent to the server.' });
@@ -842,6 +843,7 @@ async function startServer() {
       eventType = getZohoEventType(req.body);
       const ticketPayload = getZohoTicketPayload(req.body);
       externalTicketId = String(ticketPayload.id || ticketPayload.ticketId || '').trim();
+      if (!eventType && externalTicketId) eventType = 'TICKET_ADD';
       if (eventType !== 'TICKET_ADD') {
         await recordEvent('IGNORED', { payloadMetadata: { eventType } });
         return void res.status(200).json({ success: true, status: 'ignored' });

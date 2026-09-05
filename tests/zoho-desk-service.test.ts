@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { mapZohoPriority, mapZohoStatus, mapZohoTicketToTmsInput } from '../zohoDeskService';
+import { getZohoEventType, getZohoTicketPayload, mapZohoPriority, mapZohoStatus, mapZohoTicketToTmsInput } from '../zohoDeskService';
 
 const settings = {
   id: 'zoho-desk' as const, enabled: true, syncNewTickets: true, defaultDepartmentId: 'dept-default', defaultAssigneeEmail: 'fallback@example.com', defaultPriority: 'Medium' as const,
@@ -23,6 +23,12 @@ test('Zoho priority mapping handles known and unknown values', () => {
   assert.equal(mapZohoPriority('Urgent'), 'Critical');
   assert.equal(mapZohoPriority('High'), 'High');
   assert.equal(mapZohoPriority('Unknown'), 'Medium');
+});
+
+test('Zoho webhook parser accepts form-encoded JSON payloads', () => {
+  const body = { data: JSON.stringify({ eventType: 'Ticket Add', id: '80003', subject: 'Printer issue' }) };
+  assert.equal(getZohoEventType(body), 'TICKET_ADD');
+  assert.equal(getZohoTicketPayload(body).id, '80003');
 });
 
 test('Zoho mapper preserves external ticket metadata and maps department/assignee', () => {

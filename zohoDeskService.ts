@@ -7,16 +7,27 @@ const asRecord = (value: unknown): UnknownRecord => value && typeof value === 'o
 const asText = (value: unknown, max = 10_000) => String(value ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, max);
 const firstText = (...values: unknown[]) => values.map((value) => asText(value)).find(Boolean) || '';
 
+const asPayloadRecord = (value: unknown): UnknownRecord => {
+  if (typeof value === 'string' && value.length <= 256_000) {
+    try { return asRecord(JSON.parse(value)); } catch { return {}; }
+  }
+  return asRecord(value);
+};
+
+const payloadCandidates = (body: unknown) => {
+  const root = asPayloadRecord(body);
+  const nested = [root.payload, root.data, root.body, root.ticket].map(asPayloadRecord);
+  return [root, ...nested, ...nested.flatMap((value) => [asPayloadRecord(value.payload), asPayloadRecord(value.data), asPayloadRecord(value.ticket)])];
+};
+
 export function getZohoEventType(body: unknown) {
-  const payload = asRecord(body);
-  return firstText(payload.eventType, payload.event, payload.type, payload.eventName).replace(/[-\s]/g, '_').toUpperCase();
+  const values = payloadCandidates(body);
+  return firstText(...values.flatMap((payload) => [payload.eventType, payload.event, payload.type, payload.eventName])).replace(/[-\s]/g, '_').toUpperCase();
 }
 
 export function getZohoTicketPayload(body: unknown): UnknownRecord {
-  const payload = asRecord(body);
-  for (const value of [payload.ticket, payload.data, payload.payload, asRecord(payload.data).ticket, asRecord(payload.payload).ticket]) {
-    const candidate = asRecord(value);
-    if (Object.keys(candidate).length) return candidate;
+  for (const candidate of payloadCandidates(body)) {
+    if (firstText(candidate.id, candidate.ticketId, candidate.subject, candidate.ticketNumber)) return candidate;
   }
   return {};
 }
