@@ -24,7 +24,7 @@ export interface SentEmail {
   subject: string;
   body: string;
   sentAt: string;
-  notificationType: 'Assignment' | 'Escalation' | 'Closure';
+  notificationType: 'Assignment' | 'Escalation' | 'Closure' | 'SubmitForSignoff' | 'SignedOff';
   escalationType?: 'Manual' | 'Auto-SLA-Breach';
 }
 

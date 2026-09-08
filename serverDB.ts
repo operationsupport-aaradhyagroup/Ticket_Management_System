@@ -70,7 +70,7 @@ export interface ISentEmail {
   subject: string;
   body: string;
   sentAt: string;
-  notificationType: 'Assignment' | 'Escalation' | 'Closure';
+  notificationType: 'Assignment' | 'Escalation' | 'Closure' | 'SubmitForSignoff' | 'SignedOff';
   escalationType?: 'Manual' | 'Auto-SLA-Breach';
 }
 
@@ -395,7 +395,7 @@ if (useMongo) {
       subject: { type: String, required: true },
       body: { type: String, required: true },
       sentAt: { type: String, required: true },
-      notificationType: { type: String, enum: ['Assignment', 'Escalation', 'Closure'], required: true },
+      notificationType: { type: String, enum: ['Assignment', 'Escalation', 'Closure', 'SubmitForSignoff', 'SignedOff'], required: true },
       escalationType: { type: String, enum: ['Manual', 'Auto-SLA-Breach'], required: false }
     });
 

@@ -73,7 +73,7 @@ const sanitizeUser = (user: IUser) => ({
   reportingManagerEmail: user.reportingManagerEmail
 });
 
-type NotificationType = 'Assignment' | 'Escalation' | 'Closure';
+type NotificationType = 'Assignment' | 'Escalation' | 'Closure' | 'SubmitForSignoff' | 'SignedOff';
 type PushNotificationType = NotificationType | 'Reminder' | 'Chat';
 
 const escapeHtml = (value: string) =>
@@ -196,8 +196,8 @@ const extractEmailContext = (email: ISentEmail) => {
     ticketUrl: getTicketUrl(email.ticketId),
     departmentName: escapeHtml(body.match(/Department:\s*(.+)/)?.[1]?.trim() || 'Not available'),
     priority: escapeHtml(body.match(/Priority:\s*(.+)/)?.[1]?.trim() || body.match(/Ticket ID:\s*.+\((.+?) priority\)/)?.[1]?.trim() || 'Not available'),
-    raisedBy: escapeHtml(body.match(/Raised By:\s*(.+)/)?.[1]?.trim() || 'Not available'),
-    assignedTo: escapeHtml(body.match(/Assigned To:\s*(.+)/)?.[1]?.trim() || 'Not available'),
+    raisedBy: escapeHtml((body.match(/Raised By:\s*(.+)/)?.[1] || body.match(/Signed Off By:\s*(.+)/)?.[1])?.trim() || 'Not available'),
+    assignedTo: escapeHtml((body.match(/Assigned To:\s*(.+)/)?.[1] || body.match(/Submitted By:\s*(.+)/)?.[1])?.trim() || 'Not available'),
     finalStatus: escapeHtml(body.match(/Final Status:\s*(.+)/)?.[1]?.trim() || 'Not available'),
     closedAt: escapeHtml(body.match(/Closed At:\s*(.+)/)?.[1]?.trim() || formatDateTime(email.sentAt)),
     description: escapeHtml(body.match(/Description:\s*([\s\S]*?)\n(?:Department|Priority|SLA Due|Raised By|Registered Server timestamp)/)?.[1]?.trim() || 'Not available'),
@@ -344,15 +344,12 @@ const buildAssignmentEmailHtml = (email: ISentEmail) => {
 
 const buildEscalationEmailHtml = (email: ISentEmail) => {
   const context = extractEmailContext(email);
-  const escalationReason = escapeHtml(
-    email.escalationType === 'Auto-SLA-Breach' ? 'Automatic SLA breach trigger' : 'Manual operator escalation'
-  );
 
   return renderTicketEmailLayout({
     badge: 'Aaradhya Service Desk',
-    title: 'Urgent Ticket Escalation',
-    subtitle: 'A complaint ticket requires immediate attention due to escalation.',
-    intro: `Hello <strong>${context.recipientName}</strong>,<br /><br />Ticket <strong>${context.ticketId}</strong> has been escalated to you because of <strong>${escalationReason}</strong>.`,
+    title: 'Ticket Escalated',
+    subtitle: '',
+    intro: `Hello <strong>${context.recipientName}</strong>,<br /><br />The ticket has been escalated for further attention. Please review the details and take the necessary action.`,
     summaryRows: [
       { label: 'Ticket ID', value: context.ticketId },
       { label: 'Title', value: context.ticketTitle },
@@ -362,10 +359,46 @@ const buildEscalationEmailHtml = (email: ISentEmail) => {
       { label: 'SLA Due', value: context.slaDue },
       { label: 'Raised By', value: context.raisedBy }
     ],
-    alertTone: 'red',
-    alertText: 'Please review this escalated complaint immediately and take the necessary next step to avoid further SLA impact.',
     ticketUrl: context.ticketUrl,
     ctaLabel: 'Open Escalated Ticket'
+  });
+};
+
+const buildSubmitForSignoffEmailHtml = (email: ISentEmail) => {
+  const context = extractEmailContext(email);
+  return renderTicketEmailLayout({
+    badge: 'Aaradhya Service Desk',
+    title: 'Ticket Submitted for Sign-Off',
+    subtitle: '',
+    intro: `Hello <strong>${context.recipientName}</strong>,<br /><br />The ticket has been submitted for sign-off. Please review the details and complete the sign-off process.`,
+    summaryRows: [
+      { label: 'Ticket ID', value: context.ticketId },
+      { label: 'Title', value: context.ticketTitle },
+      { label: 'Description', value: context.description },
+      { label: 'Department', value: context.departmentName },
+      { label: 'Priority', value: context.priority, emphasis: true, tone: 'info' },
+      { label: 'Submitted By', value: context.assignedTo }
+    ],
+    ticketUrl: context.ticketUrl,
+    ctaLabel: 'Review for Sign-Off'
+  });
+};
+
+const buildSignedOffEmailHtml = (email: ISentEmail) => {
+  const context = extractEmailContext(email);
+  return renderTicketEmailLayout({
+    badge: 'Aaradhya Service Desk',
+    title: 'Ticket Signed Off',
+    subtitle: '',
+    intro: `Hello <strong>${context.recipientName}</strong>,<br /><br />The ticket has been signed off successfully.`,
+    summaryRows: [
+      { label: 'Ticket ID', value: context.ticketId },
+      { label: 'Title', value: context.ticketTitle },
+      { label: 'Department', value: context.departmentName },
+      { label: 'Signed Off By', value: context.raisedBy }
+    ],
+    ticketUrl: context.ticketUrl,
+    ctaLabel: 'View Signed-Off Ticket'
   });
 };
 
@@ -435,14 +468,32 @@ const buildNotificationEmail = ({
     };
   }
 
+  if (notificationType === 'SubmitForSignoff') {
+    return {
+      id: 'email-' + Date.now(), ticketId: ticket.id, ticketTitle: ticket.title, toName: recipientName, toEmail: recipientEmail,
+      subject: `📝 Action Required: Ticket Submitted for Sign-Off – [${ticket.id}]`,
+      body: `Hello ${recipientName},\n\nThe ticket has been submitted for sign-off. Please review the details and complete the sign-off process.\n\nTicket ID: ${ticket.id}\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nDepartment: ${ticket.departmentName}\nPriority: ${ticket.priority}\nSubmitted By: ${ticket.assignedAgent || 'Assigned Employee'}\nRegistered Server timestamp: ${sentAt}`,
+      sentAt, notificationType
+    };
+  }
+
+  if (notificationType === 'SignedOff') {
+    return {
+      id: 'email-' + Date.now(), ticketId: ticket.id, ticketTitle: ticket.title, toName: recipientName, toEmail: recipientEmail,
+      subject: `🔏 Ticket Signed Off – [${ticket.id}]`,
+      body: `Hello ${recipientName},\n\nThe ticket has been signed off successfully.\n\nTicket ID: ${ticket.id}\nTitle: ${ticket.title}\nDepartment: ${ticket.departmentName}\nSigned Off By: ${ticket.creatorName}\nRegistered Server timestamp: ${sentAt}`,
+      sentAt, notificationType
+    };
+  }
+
   return {
     id: 'email-' + Date.now(),
     ticketId: ticket.id,
     ticketTitle: ticket.title,
     toName: recipientName,
     toEmail: recipientEmail,
-    subject: `[URGENT ESCALATION] ${ticket.id} SLA Limit Triggered - ${ticket.title}`,
-    body: `Attention: ${recipientName} (${recipientEmail})\n\nTicket ID: ${ticket.id} (${ticket.priority} priority) has been escalated to you due to: ${escalationType === 'Manual' ? 'manual operator escalation' : 'automatic SLA breach limits'}.\n\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nDepartment: ${ticket.departmentName}\nSLA Due: ${new Date(ticket.slaDueDate).toLocaleString()}\nRaised By: ${ticket.creatorName} (${ticket.creatorEmail})\n\nThis complaint now needs immediate intervention from the escalation owner.\nRegistered Server timestamp: ${sentAt}`,
+    subject: `🚨 Ticket Escalated – [${ticket.id}]`,
+    body: `Hello ${recipientName},\n\nThe ticket has been escalated for further attention. Please review the details and take the necessary action.\n\nTicket ID: ${ticket.id}\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nDepartment: ${ticket.departmentName}\nPriority: ${ticket.priority}\nSLA Due: ${new Date(ticket.slaDueDate).toLocaleString()}\nRaised By: ${ticket.creatorName} (${ticket.creatorEmail})\nRegistered Server timestamp: ${sentAt}`,
     sentAt,
     notificationType,
     escalationType: escalationType || 'Manual'
@@ -555,6 +606,8 @@ const sendPushForTicketEvent = async ({
     Assignment: 'New Ticket Assigned',
     Escalation: 'Ticket Escalated',
     Closure: 'Ticket Closed',
+    SubmitForSignoff: 'Ticket Submitted for Sign-Off',
+    SignedOff: 'Ticket Signed Off',
     Reminder: 'Pending Ticket Reminder',
     Chat: 'New Ticket Message'
   };
@@ -563,6 +616,8 @@ const sendPushForTicketEvent = async ({
     Assignment: `${ticket.id} has been assigned to ${recipientName}.`,
     Escalation: `${ticket.id} needs immediate escalation attention.`,
     Closure: `${ticket.id} has been closed.`,
+    SubmitForSignoff: `${ticket.id} has been submitted for your sign-off.`,
+    SignedOff: `${ticket.id} has been signed off successfully.`,
     Reminder: `${ticket.id} is still pending action.`,
     Chat: `You have a new message on ${ticket.id}.`
   };
@@ -593,6 +648,10 @@ const sendRealEmailViaBrevo = async (email: ISentEmail) => {
       ? buildAssignmentEmailHtml(email)
       : email.notificationType === 'Escalation'
         ? buildEscalationEmailHtml(email)
+        : email.notificationType === 'SubmitForSignoff'
+          ? buildSubmitForSignoffEmailHtml(email)
+          : email.notificationType === 'SignedOff'
+            ? buildSignedOffEmailHtml(email)
         : email.notificationType === 'Closure'
           ? buildClosureEmailHtml(email)
           : undefined;
@@ -1973,14 +2032,24 @@ app.get('/cron', async (req, res) => {
       id: `api-audit-${crypto.randomUUID()}`, eventType: 'TICKET_STATUS_CHANGED_VIA_API',
       actor: req.integrationClient!.name, apiClientId: req.integrationClient!.id, ticketId: ticket.id, createdAt: now
     });
-    if (status === 'Closed' && ticket.status !== 'Closed' && updated?.creatorEmail) {
+    if (status === 'Resolved' && ticket.status !== 'Resolved' && updated?.creatorEmail) {
       await createNotificationEmail({
-        notificationType: 'Closure', ticket: updated,
+        notificationType: 'SubmitForSignoff', ticket: updated,
         recipientName: updated.creatorName, recipientEmail: updated.creatorEmail
       });
       await sendPushForTicketEvent({
-        type: 'Closure', ticket: updated,
+        type: 'SubmitForSignoff', ticket: updated,
         recipientName: updated.creatorName, recipientEmail: updated.creatorEmail
+      });
+    }
+    if (status === 'Closed' && ticket.status !== 'Closed' && updated?.assignedAgentEmail) {
+      await createNotificationEmail({
+        notificationType: 'SignedOff', ticket: updated,
+        recipientName: updated.assignedAgent || 'Assigned Employee', recipientEmail: updated.assignedAgentEmail
+      });
+      await sendPushForTicketEvent({
+        type: 'SignedOff', ticket: updated,
+        recipientName: updated.assignedAgent || 'Assigned Employee', recipientEmail: updated.assignedAgentEmail
       });
     }
     res.json({ success: true, data: toPublicTicket(updated!) });
@@ -2226,22 +2295,38 @@ app.get('/cron', async (req, res) => {
         return;
       }
 
-      let closureEmail: ISentEmail | null = null;
-      const isClosingNow = existingTicket.status !== 'Closed' && updated.status === 'Closed';
+      let statusEmail: ISentEmail | null = null;
+      const isSubmittedForSignoff = existingTicket.status !== 'Resolved' && updated.status === 'Resolved';
+      const isSignedOff = existingTicket.status !== 'Closed' && updated.status === 'Closed';
       const assignmentChanged = !!updated.assignedAgentEmail && updated.assignedAgentEmail !== existingTicket.assignedAgentEmail;
 
-      if (isClosingNow) {
-        closureEmail = await createNotificationEmail({
-          notificationType: 'Closure',
+      if (isSubmittedForSignoff && updated.creatorEmail) {
+        statusEmail = await createNotificationEmail({
+          notificationType: 'SubmitForSignoff',
           ticket: updated,
           recipientName: updated.creatorName,
           recipientEmail: updated.creatorEmail
         });
         await sendPushForTicketEvent({
-          type: 'Closure',
+          type: 'SubmitForSignoff',
           ticket: updated,
           recipientEmail: updated.creatorEmail,
           recipientName: updated.creatorName
+        });
+      }
+
+      if (isSignedOff && updated.assignedAgentEmail) {
+        statusEmail = await createNotificationEmail({
+          notificationType: 'SignedOff',
+          ticket: updated,
+          recipientName: updated.assignedAgent || 'Assigned Employee',
+          recipientEmail: updated.assignedAgentEmail
+        });
+        await sendPushForTicketEvent({
+          type: 'SignedOff',
+          ticket: updated,
+          recipientEmail: updated.assignedAgentEmail,
+          recipientName: updated.assignedAgent || 'Assigned Employee'
         });
       }
 
@@ -2292,7 +2377,7 @@ app.get('/cron', async (req, res) => {
         }
       }
 
-      res.json({ ticket: updated, email: closureEmail });
+      res.json({ ticket: updated, email: statusEmail });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
