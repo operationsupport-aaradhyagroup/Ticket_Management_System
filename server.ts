@@ -414,7 +414,7 @@ const buildNotificationEmail = ({
       ticketTitle: ticket.title,
       toName: recipientName,
       toEmail: recipientEmail,
-      subject: `[TICKET ASSIGNED] ${ticket.id} - ${ticket.title}`,
+      subject: `New Ticket Assigned – [${ticket.id}] - ${ticket.title}`,
       body: `Hello ${recipientName},\n\nA complaint ticket has been assigned to you for action.\n\nTicket ID: ${ticket.id}\nTitle: ${ticket.title}\nDescription: ${ticket.description}\nDepartment: ${ticket.departmentName}\nPriority: ${ticket.priority}\nSLA Due: ${new Date(ticket.slaDueDate).toLocaleString()}\nRaised By: ${ticket.creatorName} (${ticket.creatorEmail})\n\nPlease review and begin work on this ticket.\nRegistered Server timestamp: ${sentAt}`,
       sentAt,
       notificationType
