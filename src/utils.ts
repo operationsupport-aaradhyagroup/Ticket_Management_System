@@ -1,5 +1,11 @@
 import { Ticket, SLAUnit, SLAStatus, UserSession } from './types';
 
+export function getTicketStatusLabel(status: string): string {
+  if (status === 'Resolved') return 'Submit For Signoff';
+  if (status === 'Closed') return 'Signoff';
+  return status;
+}
+
 export function formatDateTime(value: string | Date | null | undefined): string {
   if (!value) return 'Not available';
   const date = value instanceof Date ? value : new Date(value);

@@ -14,7 +14,7 @@ const serverSource = fs.readFileSync(path.join(process.cwd(), 'server.ts'), 'utf
 const zohoServiceSource = fs.readFileSync(path.join(process.cwd(), 'zohoDeskService.ts'), 'utf8');
 
 test('Zoho status mapping handles known and unknown values', () => {
-  assert.equal(mapZohoStatus('On Hold'), 'In Progress');
+  assert.equal(mapZohoStatus('On Hold'), 'Open');
   assert.equal(mapZohoStatus('Resolved'), 'Resolved');
   assert.equal(mapZohoStatus('Custom status'), 'Open');
 });

@@ -1961,7 +1961,7 @@ app.get('/cron', async (req, res) => {
   app.patch('/api/v1/tickets/:id/status', authenticateApiKey('tickets:update'), async (req, res) => {
     const ticket = await apiTicketById(req.params.id, res);
     if (!ticket) return;
-    const statusMap: Record<string, ITicket['status']> = { open: 'Open', in_progress: 'In Progress', resolved: 'Resolved', closed: 'Closed' };
+    const statusMap: Record<string, ITicket['status']> = { open: 'Open', resolved: 'Resolved', closed: 'Closed' };
     const status = statusMap[String(req.body.status || '').toLowerCase()];
     if (!status) return void res.status(400).json({ success: false, error: { code: 'VALIDATION_FAILED', message: 'Invalid status.' } });
     const now = new Date().toISOString();
@@ -2104,14 +2104,29 @@ app.get('/cron', async (req, res) => {
       // A ticket's workflow is deliberately one way. Keeping this check on the
       // server prevents a manually crafted request from reopening or regressing a
       // ticket after it has been advanced.
-      const statusFlow = ['Open', 'In Progress', 'Resolved', 'Closed'];
+      const statusFlow = ['Open', 'Resolved', 'Closed'];
       if (status !== undefined && status !== existingTicket.status) {
         const currentStatusIndex = statusFlow.indexOf(existingTicket.status);
         const nextStatusIndex = statusFlow.indexOf(status);
+        const isLegacyInProgressTransition = existingTicket.status === 'In Progress' && status === 'Resolved';
 
-        if (currentStatusIndex < 0 || nextStatusIndex !== currentStatusIndex + 1) {
+        if (!isLegacyInProgressTransition && (currentStatusIndex < 0 || nextStatusIndex !== currentStatusIndex + 1)) {
           res.status(400).json({
             error: `Status can only advance one step: ${existingTicket.status} → ${statusFlow[currentStatusIndex + 1] || 'no further status'}.`
+          });
+          return;
+        }
+
+        const isSubmittingForSignoff =
+          (existingTicket.status === 'Open' || existingTicket.status === 'In Progress') &&
+          status === 'Resolved';
+        const isGivingFinalSignoff = existingTicket.status === 'Resolved' && status === 'Closed';
+
+        if ((isSubmittingForSignoff && !isAssignedUser) || (isGivingFinalSignoff && !isTicketCreator)) {
+          res.status(403).json({
+            error: isSubmittingForSignoff
+              ? 'Only the assigned employee can submit this ticket for signoff.'
+              : 'Only the ticket raiser can provide final signoff.'
           });
           return;
         }
@@ -2121,9 +2136,6 @@ app.get('/cron', async (req, res) => {
         const dueDateChanged = slaDueDate !== undefined && slaDueDate !== existingTicket.slaDueDate;
         const forbiddenChanges: string[] = [];
 
-        if (status !== undefined && status !== existingTicket.status && !isAssignedUser) {
-          forbiddenChanges.push('ticket status');
-        }
         if (priority !== undefined && priority !== existingTicket.priority) {
           forbiddenChanges.push('priority');
         }

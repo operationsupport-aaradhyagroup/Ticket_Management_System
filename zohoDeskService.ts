@@ -41,7 +41,7 @@ export const mapZohoStatus = (value: unknown): ITicket['status'] => {
   const status = asText(value, 100).toLowerCase();
   if (status === 'resolved') return 'Resolved';
   if (status === 'closed') return 'Closed';
-  if (['in progress', 'in_progress', 'on hold', 'on_hold', 'escalated'].includes(status)) return 'In Progress';
+  if (['in progress', 'in_progress', 'on hold', 'on_hold', 'escalated'].includes(status)) return 'Open';
   return 'Open';
 };
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Ticket, TicketStatus, SLAStatus, SLAUnit, UserSession, TicketPriority, TicketRemarkItem } from '../types';
-import { formatSLACountdown, computeSLAStatus, calculateDueDate, formatDateTime } from '../utils';
+import { formatSLACountdown, computeSLAStatus, calculateDueDate, formatDateTime, getTicketStatusLabel } from '../utils';
 import { X, Clock, User, ShieldAlert, ArrowLeft, Send, CheckCircle2, RefreshCw, FileText } from 'lucide-react';
 
 interface TicketDetailViewProps {
@@ -18,6 +18,11 @@ const withoutEmailAddresses = (text: string) =>
     .replace(/\s*<?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}>?/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+
+const formatAuditAction = (action: string) => withoutEmailAddresses(action)
+  .replace(/Ticket resolved by/i, 'Ticket submitted for signoff by')
+  .replace(/'Resolved'/g, "'Submit For Signoff'")
+  .replace(/'Closed'/g, "'Signoff'");
 
 export default function TicketDetailView({
   ticket,
@@ -97,16 +102,23 @@ export default function TicketDetailView({
     return (ticket.assignedAgentEmail || '').trim().toLowerCase() === currentEmail ||
       (!!currentName && (ticket.assignedAgent || '').trim().toLowerCase() === currentName);
   }, [currentUser.email, currentUser.name, ticket.assignedAgent, ticket.assignedAgentEmail]);
-  const canAdvanceStatus = isAdmin || isAssignedToCurrentUser;
+  const isTicketRaiser = currentUser.email.toLowerCase() === ticket.creatorEmail.toLowerCase();
+  const canSubmitForSignoff = (ticket.status === 'Open' || ticket.status === 'In Progress') && isAssignedToCurrentUser;
+  const canGiveFinalSignoff = ticket.status === 'Resolved' && isTicketRaiser;
+  const canAdvanceStatus = canSubmitForSignoff || canGiveFinalSignoff;
 
   // Priority and SLA due dates are administrative controls. An assigned employee
   // can progress work, but cannot change the service commitment for the ticket.
   const canEditDueDate = isAdmin;
-  const statusFlow: TicketStatus[] = ['Open', 'In Progress', 'Resolved', 'Closed'];
+  const statusFlow: TicketStatus[] = ['Open', 'Resolved', 'Closed'];
   const statusIndex = statusFlow.indexOf(ticket.status);
   const availableStatusOptions = !canAdvanceStatus
     ? [ticket.status]
-    : statusFlow.filter((status, index) => index === statusIndex || index === statusIndex + 1);
+    : ticket.status === 'Resolved'
+      ? ['Resolved', 'Closed']
+      : statusIndex === -1
+        ? [ticket.status, 'Resolved']
+        : ['Open', 'Resolved'];
 
   // SLA Container Styles
   const slaContainerStyles = useMemo(() => {
@@ -152,9 +164,9 @@ export default function TicketDetailView({
     const historyEntries = [...ticket.history];
 
     if (ticketStatus !== ticket.status) {
-      let logText = `Ticket status transitioned from '${ticket.status}' to '${ticketStatus}' by ${currentUser.name}`;
+      let logText = `Ticket status transitioned from '${getTicketStatusLabel(ticket.status)}' to '${getTicketStatusLabel(ticketStatus)}' by ${currentUser.name}`;
       if (ticketStatus === 'Resolved') {
-        logText = `Ticket resolved by ${currentUser.name}. SLA recording stopped.`;
+        logText = `Ticket submitted for signoff by ${currentUser.name}. SLA recording stopped.`;
       }
       historyEntries.push({
         id: 'hist-' + Date.now(),
@@ -512,7 +524,7 @@ export default function TicketDetailView({
                     {formatDateTime(h.timestamp)}
                   </span>
                   <p className="text-gray-700 font-medium">
-                    {withoutEmailAddresses(h.action)}
+                    {formatAuditAction(h.action)}
                   </p>
                 </div>
               ))}
@@ -545,12 +557,18 @@ export default function TicketDetailView({
                     <option key={status} value={status}>
                       {status === 'Open' && '🟢 Open'}
                       {status === 'In Progress' && '🔵 In Progress'}
-                      {status === 'Resolved' && '✅ Resolved'}
-                      {status === 'Closed' && '🔒 Closed'}
+                      {status === 'Resolved' && '✅ Submit For Signoff'}
+                      {status === 'Closed' && '🔒 Signoff'}
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-400 mt-1">{canAdvanceStatus ? 'Status can only move forward: Open → In Progress → Resolved → Closed.' : 'Only the assigned employee can progress this ticket.'}</p>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  {canSubmitForSignoff
+                    ? 'Only the assigned employee can submit this ticket for signoff.'
+                    : canGiveFinalSignoff
+                      ? 'As the ticket raiser, you can provide the final signoff.'
+                      : 'Only the assigned employee can submit for signoff; only the ticket raiser can provide final signoff.'}
+                </p>
               </div>
 
               {/* Priority Select */}

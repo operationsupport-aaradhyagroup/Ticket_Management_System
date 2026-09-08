@@ -306,9 +306,8 @@ export default function SLAStatsDashboard({
             >
               <option value="all">All Statuses</option>
               <option value="Open">Open</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Resolved">Resolved</option>
-              <option value="Closed">Closed</option>
+              <option value="Resolved">Submit For Signoff</option>
+              <option value="Closed">Signoff</option>
             </select>
           </div>
 

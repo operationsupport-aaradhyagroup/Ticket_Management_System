@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Ticket, Department, TicketStatus, SLAStatus, TicketPriority } from '../types';
-import { formatSLACountdown, computeSLAStatus, formatDateTime } from '../utils';
+import { formatSLACountdown, computeSLAStatus, formatDateTime, getTicketStatusLabel } from '../utils';
 import { Search, Filter, RefreshCw, AlertCircle, Clock, CheckCircle2, User, Play, ChevronRight } from 'lucide-react';
 
 interface TicketListProps {
@@ -178,9 +178,8 @@ export default function TicketList({
           >
             <option value="all">All Statuses</option>
             <option value="Open">Open</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Resolved">Resolved</option>
-            <option value="Closed">Closed</option>
+            <option value="Resolved">Submit For Signoff</option>
+            <option value="Closed">Signoff</option>
           </select>
         </div>
 
@@ -276,7 +275,7 @@ export default function TicketList({
                       {t.priority}
                     </span>
                     <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md ${getStatusClass(t.status)}`}>
-                      {t.status}
+                      {getTicketStatusLabel(t.status)}
                     </span>
                   </div>
                 </div>
@@ -377,7 +376,7 @@ export default function TicketList({
                           {t.priority}
                         </span>
                         <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md ${getStatusClass(t.status)}`}>
-                          {t.status}
+                          {getTicketStatusLabel(t.status)}
                         </span>
                       </div>
                     </td>
