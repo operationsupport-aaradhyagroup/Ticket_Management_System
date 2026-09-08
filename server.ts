@@ -2194,16 +2194,16 @@ app.get('/cron', async (req, res) => {
       if (isAdminUser && isEscalated !== undefined) updates.isEscalated = isEscalated;
 
       if (history !== undefined) {
-        if (!isAdminUser && !validateAppendedItems(existingTicket.history || [], history || [])) {
-          res.status(403).json({ error: 'Invalid history update payload for this user.' });
+        if (!validateAppendedItems(existingTicket.history || [], history || [])) {
+          res.status(409).json({ error: 'Ticket activity changed. Sync the latest ticket before saving.' });
           return;
         }
         updates.history = history;
       }
 
       if (remarks !== undefined) {
-        if (!isAdminUser && !validateAppendedItems(existingTicket.remarks || [], remarks || [])) {
-          res.status(403).json({ error: 'Invalid remarks update payload for this user.' });
+        if (!validateAppendedItems(existingTicket.remarks || [], remarks || [])) {
+          res.status(409).json({ error: 'Ticket conversation changed. Sync the latest ticket before saving.' });
           return;
         }
         updates.remarks = remarks;

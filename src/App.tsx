@@ -365,7 +365,10 @@ export default function App() {
 
         // A conversation can change between the initial screen load and posting a
         // reply. Reload it, append only this user's new items, then retry once.
-        if (fail.error === 'Invalid history update payload for this user.' && pendingRemarks.length > 0) {
+        const isStaleConversation = res.status === 409 &&
+          (fail.error === 'Ticket activity changed. Sync the latest ticket before saving.' ||
+            fail.error === 'Ticket conversation changed. Sync the latest ticket before saving.');
+        if (isStaleConversation && pendingRemarks.length > 0) {
           const latestTicketsResponse = await fetch('/api/tickets', {
             headers: { 'Authorization': `Bearer ${token}` }
           });
