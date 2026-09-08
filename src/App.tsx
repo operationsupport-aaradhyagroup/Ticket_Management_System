@@ -771,7 +771,7 @@ export default function App() {
             </div>
             <div className="min-w-0">
               <h1 className="text-base sm:text-lg md:text-xl font-black tracking-[-0.025em] leading-tight text-white">
-                AARADHYA SERVICEDESK
+                Aaradhya Service Desk
                 <span className="mt-0.5 block text-[11px] sm:text-xs font-medium tracking-normal text-blue-100">Simplifying Support. Accelerating Resolution.</span>
               </h1>
             </div>

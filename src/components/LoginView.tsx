@@ -44,8 +44,8 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           <div className="mb-4 h-20 w-20 overflow-hidden rounded-2xl bg-white p-2 shadow-sm">
             <img src="/aaradhya-group-logo.png" alt="Aaradhya Group logo" className="h-full w-full object-contain" />
           </div>
-          <h1 className="max-w-sm text-2xl font-bold uppercase tracking-wide leading-tight">
-            AARADHYA SERVICEDESK
+          <h1 className="max-w-sm text-2xl font-bold tracking-wide leading-tight">
+            Aaradhya Service Desk
           </h1>
           <p className="mt-2 text-sm font-medium text-blue-100">
             Simplifying Support. Accelerating Resolution.
