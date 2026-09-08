@@ -906,42 +906,132 @@ async function startServer() {
     }
   });
 
-  const runReminderSweep = async () => {
-    if (!ONESIGNAL_PUSH_ENABLED || !ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) return;
+  const automaticallyEscalateBreachedTicket = async (ticket: ITicket, allTickets: ITicket[]) => {
+    const [users, departments, escalationRules] = await Promise.all([
+      dbActions.getUsers(),
+      dbActions.getDepartments(),
+      dbActions.getEscalationRules()
+    ]);
+    const assignedUser = ticket.assignedAgentEmail
+      ? users.find((user) => user.email.toLowerCase() === ticket.assignedAgentEmail?.toLowerCase())
+      : users.find((user) => user.name === ticket.assignedAgent);
+    const creatorUser = users.find((user) => user.email.toLowerCase() === ticket.creatorEmail.toLowerCase());
+    const currentEscalationUser = assignedUser || creatorUser || null;
+    const department = departments.find((item) => item.id === ticket.departmentId);
+    const departmentRule = escalationRules.find((rule) => rule.departmentId === ticket.departmentId);
+    const ladder = departmentRule?.designationLevels || [];
+    const currentIndex = ladder.map(normalizeRoleLabel).findIndex((level) => level === normalizeRoleLabel(currentEscalationUser?.designation || ''));
+    const nextLevel = currentIndex >= 0 && currentIndex < ladder.length - 1 ? ladder[currentIndex + 1] : null;
+    const activeTickets = allTickets.filter((item) => item.status !== 'Resolved' && item.status !== 'Closed');
 
-    try {
-      const tickets = await dbActions.getTickets();
-      const now = Date.now();
-      const reminderIntervalMs = ONESIGNAL_REMINDER_INTERVAL_MINUTES * 60 * 1000;
+    const ladderRecipient = nextLevel && !isDepartmentHeadLevel(nextLevel)
+      ? users
+          .filter((user) => user.departmentId === ticket.departmentId)
+          .filter((user) => normalizeRoleLabel(user.designation || '') === normalizeRoleLabel(nextLevel))
+          .filter((user) => user.email.toLowerCase() !== (currentEscalationUser?.email || '').toLowerCase())
+          .map((user) => ({
+            name: user.name,
+            email: user.email,
+            label: `Designation Ladder: ${nextLevel} (Least Loaded)`,
+            activeLoad: activeTickets.filter((item) => (item.assignedAgentEmail || '').toLowerCase() === user.email.toLowerCase()).length
+          }))
+          .sort((a, b) => a.activeLoad - b.activeLoad || a.name.localeCompare(b.name))[0] || null
+      : null;
+    const reportingManager = currentEscalationUser?.reportingManagerEmail
+      ? users.find((user) => user.email.toLowerCase() === currentEscalationUser.reportingManagerEmail?.toLowerCase())
+      : null;
+    const reportingManagerRecipient = reportingManager && !isSameUserTarget(currentEscalationUser?.name, currentEscalationUser?.email, reportingManager.name, reportingManager.email)
+      ? { name: reportingManager.name, email: reportingManager.email, label: 'Reporting Manager Fallback' }
+      : null;
+    const departmentHead = department?.headEmail
+      ? users.find((user) => user.email.toLowerCase() === department.headEmail?.toLowerCase())
+      : null;
+    const departmentHeadRecipient = departmentHead
+      ? { name: departmentHead.name, email: departmentHead.email, label: departmentRule ? 'Department Head Fallback' : 'Department Head' }
+      : null;
+    const recipient = ladderRecipient || reportingManagerRecipient || departmentHeadRecipient;
 
-      for (const ticket of tickets) {
-        if (!ticket.assignedAgentEmail) continue;
-        if (ticket.status === 'Resolved' || ticket.status === 'Closed') continue;
-
-        const lastReminderAt = ticket.lastReminderSentAt ? new Date(ticket.lastReminderSentAt).getTime() : 0;
-        if (lastReminderAt && now - lastReminderAt < reminderIntervalMs) continue;
-
-        await sendPushForTicketEvent({
-          type: 'Reminder',
-          ticket,
-          recipientEmail: ticket.assignedAgentEmail,
-          recipientName: ticket.assignedAgent || 'Assigned Employee',
-          extraContent: `Pending ticket: ${ticket.title}`
-        });
-
-        await dbActions.updateTicket(ticket.id, {
-          lastReminderSentAt: new Date(now).toISOString(),
-          reminderCount: (ticket.reminderCount || 0) + 1
-        });
-      }
-    } catch (error: any) {
-      console.warn(`OneSignal reminder sweep failed: ${error?.message || 'Unknown error'}`);
+    if (!recipient || isSameUserTarget(ticket.assignedAgent, ticket.assignedAgentEmail, recipient.name, recipient.email)) {
+      console.warn(`Automatic SLA escalation skipped for ${ticket.id}: no higher eligible escalation target is configured.`);
+      return;
     }
+
+    const timestamp = new Date().toISOString();
+    const updates = {
+      isEscalated: true,
+      assignedAgent: recipient.name,
+      assignedAgentEmail: recipient.email,
+      slaStatus: 'SLA Breached' as const,
+      history: [...(ticket.history || []), {
+        id: `hist-${crypto.randomUUID()}`,
+        timestamp,
+        userEmail: 'system',
+        action: `Ticket automatically escalated and reassigned to ${recipient.label}.`
+      }]
+    };
+    const escalatedTicket = await dbActions.updateTicket(ticket.id, updates);
+    if (!escalatedTicket) return;
+    await createNotificationEmail({
+      notificationType: 'Escalation',
+      ticket: escalatedTicket,
+      recipientName: recipient.name,
+      recipientEmail: recipient.email,
+      escalationType: 'Auto-SLA-Breach'
+    });
+    await sendPushForTicketEvent({
+      type: 'Escalation', ticket: escalatedTicket, recipientEmail: recipient.email, recipientName: recipient.name
+    });
+  };
+
+  let reminderSweepPromise: Promise<void> | null = null;
+  const runReminderSweep = async () => {
+    if (reminderSweepPromise) return reminderSweepPromise;
+    const sweep = (async () => {
+      try {
+        const tickets = await dbActions.getTickets();
+        const now = Date.now();
+        const activeTickets = tickets.filter((ticket) => ticket.status !== 'Resolved' && ticket.status !== 'Closed');
+
+        // Escalation is independent of OneSignal. A push provider must never prevent
+        // overdue tickets from being reassigned through the configured escalation path.
+        for (const ticket of activeTickets) {
+          if (!ticket.isEscalated && new Date(ticket.slaDueDate).getTime() <= now) {
+            await automaticallyEscalateBreachedTicket(ticket, tickets);
+          }
+        }
+
+        if (!ONESIGNAL_PUSH_ENABLED || !ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) return;
+        const reminderIntervalMs = ONESIGNAL_REMINDER_INTERVAL_MINUTES * 60 * 1000;
+        for (const ticket of activeTickets) {
+          if (!ticket.assignedAgentEmail) continue;
+          const lastReminderAt = ticket.lastReminderSentAt ? new Date(ticket.lastReminderSentAt).getTime() : 0;
+          if (lastReminderAt && now - lastReminderAt < reminderIntervalMs) continue;
+          await sendPushForTicketEvent({
+            type: 'Reminder', ticket, recipientEmail: ticket.assignedAgentEmail,
+            recipientName: ticket.assignedAgent || 'Assigned Employee', extraContent: `Pending ticket: ${ticket.title}`
+          });
+          await dbActions.updateTicket(ticket.id, {
+            lastReminderSentAt: new Date(now).toISOString(), reminderCount: (ticket.reminderCount || 0) + 1
+          });
+        }
+      } catch (error: any) {
+        console.warn(`SLA reminder/escalation sweep failed: ${error?.message || 'Unknown error'}`);
+      }
+    })();
+    reminderSweepPromise = sweep;
+    void sweep.finally(() => {
+      if (reminderSweepPromise === sweep) reminderSweepPromise = null;
+    });
+    return sweep;
   };
 
   setInterval(() => {
-    runReminderSweep();
+    void runReminderSweep();
   }, 15 * 60 * 1000);
+
+  // A hosted instance may wake only when the portal receives a request. Sweep once
+  // during startup so already-breached tickets do not wait for the next interval.
+  void runReminderSweep();
 
 
 
@@ -1947,6 +2037,9 @@ app.get('/cron', async (req, res) => {
 +  // Tickets: GET (Returns all tickets)
   app.get('/api/tickets', authenticateToken, async (req, res) => {
     try {
+      // This also covers hosts that pause background intervals while idle: the first
+      // portal refresh after waking performs a safe SLA sweep before returning data.
+      await runReminderSweep();
       const tkts = await dbActions.getTickets();
       res.json({ tickets: tkts });
     } catch (e: any) {

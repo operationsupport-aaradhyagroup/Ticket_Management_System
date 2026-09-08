@@ -623,7 +623,7 @@ export default function AdminConfigPanel({
       <aside className="h-fit rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] xl:self-start">
         <div className="border-b border-slate-100 px-2 pb-4">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Admin Portal</p>
-          <h2 className="mt-1 whitespace-nowrap text-base font-black text-slate-900">Settings &amp; Management</h2>
+          <h2 className="mt-1 whitespace-nowrap text-base font-black text-slate-900">Admin Configuration</h2>
           <p className="mt-1 text-xs leading-relaxed text-slate-500">Select a block to show its settings.</p>
         </div>
         <nav className="mt-3 grid gap-1" aria-label="Settings sections">
@@ -643,17 +643,6 @@ export default function AdminConfigPanel({
         </nav>
       </aside>
       <div className="min-w-0 xl:flex xl:min-h-0 xl:flex-col">
-        <div className="mb-4 shrink-0 rounded-[20px] border border-slate-200 bg-white px-4 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.04)]">
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">Settings &amp; Management</p>
-          <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <h3 className="text-lg font-black text-slate-900">
-              {activeSettingsSection === 'organization' ? 'Organization & SLA' : activeSettingsSection === 'employees' ? 'Employee Management' : activeSettingsSection === 'escalation' ? 'Escalation Workflow' : activeSettingsSection === 'integrations' ? 'Integration & API' : 'System Controls'}
-            </h3>
-            <p className="text-xs text-slate-500">
-              {activeSettingsSection === 'organization' ? 'Manage departments and response rules.' : activeSettingsSection === 'employees' ? 'Manage employee accounts and access.' : activeSettingsSection === 'escalation' ? 'Configure designation-based routing.' : activeSettingsSection === 'integrations' ? 'Configure email sync and developer credentials.' : 'Run controlled ticket maintenance actions.'}
-            </p>
-          </div>
-        </div>
     <div className="settings-content-grid grid grid-cols-1 gap-6 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-2 xl:grid-cols-[minmax(330px,0.85fr)_minmax(0,1.65fr)]">
       
       {/* 1. DEPARTMENTS PANEL & DB SYNC (Left 1/3) */}

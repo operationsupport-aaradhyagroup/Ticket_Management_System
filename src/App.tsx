@@ -76,6 +76,13 @@ export default function App() {
   // Live reference time for SLA countdowns and status calculations
   const [referenceTime, setReferenceTime] = useState<Date>(() => new Date());
 
+  // Keep SLA countdowns current without reloading data from the server. This updates
+  // only the reference clock used by the countdown/status calculations.
+  useEffect(() => {
+    const timerId = window.setInterval(() => setReferenceTime(new Date()), 1000);
+    return () => window.clearInterval(timerId);
+  }, []);
+
   // 1. Verify token on startup
   useEffect(() => {
     async function checkAuth() {
@@ -773,7 +780,7 @@ export default function App() {
                 }`}
               >
                 <TicketIcon className="w-4 h-4 text-indigo-500" />
-                <span>All Complaints ({tickets.length})</span>
+                <span>Complaints</span>
               </button>
             )}
 
@@ -853,7 +860,7 @@ export default function App() {
                 }`}
               >
                 <LayoutDashboard className="w-4 h-4 text-blue-500" />
-                <span>Admin SLA Dashboard</span>
+                <span>Dashboard</span>
               </button>
             )}
 
@@ -872,7 +879,7 @@ export default function App() {
                 }`}
               >
                 <Settings className="w-4 h-4 text-slate-500" />
-                <span>Settings &amp; Management</span>
+                <span>Settings</span>
               </button>
             )}
           </div>
