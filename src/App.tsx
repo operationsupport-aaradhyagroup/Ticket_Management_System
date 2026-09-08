@@ -337,13 +337,13 @@ export default function App() {
   };
 
   const handleUpdateTicketInput = async (updatedTicket: Ticket) => {
-    if (!token) return;
+    if (!token) return false;
     try {
       setDataLoading(true);
       const previousTicket = tickets.find((ticket) => ticket.id === updatedTicket.id) || null;
       const dueDateChanged = !!previousTicket && previousTicket.slaDueDate !== updatedTicket.slaDueDate;
 
-      const res = await fetch(`/api/tickets/${updatedTicket.id}`, {
+      let res = await fetch(`/api/tickets/${updatedTicket.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -354,43 +354,71 @@ export default function App() {
 
       if (!res.ok) {
         const fail = await res.json();
-        throw new Error(fail.error || 'Ticket update failed on backend.');
+        let failureMessage = fail.error || 'Ticket update failed on backend.';
+        let didRetry = false;
+        const pendingRemarks = (updatedTicket.remarks || []).filter((remark) =>
+          !(previousTicket?.remarks || []).some((existingRemark) => existingRemark.id === remark.id)
+        );
+        const pendingHistory = (updatedTicket.history || []).filter((entry) =>
+          !(previousTicket?.history || []).some((existingEntry) => existingEntry.id === entry.id)
+        );
+
+        // A conversation can change between the initial screen load and posting a
+        // reply. Reload it, append only this user's new items, then retry once.
+        if (fail.error === 'Invalid history update payload for this user.' && pendingRemarks.length > 0) {
+          const latestTicketsResponse = await fetch('/api/tickets', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (latestTicketsResponse.ok) {
+            const latestTicketsData = await latestTicketsResponse.json();
+            const latestTicket = (latestTicketsData.tickets || []).find((ticket: Ticket) => ticket.id === updatedTicket.id);
+            if (latestTicket) {
+              const retryTicket: Ticket = {
+                ...latestTicket,
+                remarks: [
+                  ...(latestTicket.remarks || []),
+                  ...pendingRemarks.filter((remark) => !(latestTicket.remarks || []).some((existingRemark: Ticket['remarks'][number]) => existingRemark.id === remark.id))
+                ],
+                history: [
+                  ...latestTicket.history,
+                  ...pendingHistory.filter((entry) => !latestTicket.history.some((existingEntry) => existingEntry.id === entry.id))
+                ]
+              };
+
+              res = await fetch(`/api/tickets/${updatedTicket.id}`, {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(retryTicket)
+              });
+              didRetry = true;
+            }
+          }
+        }
+
+        if (!res.ok) {
+          if (didRetry) {
+            try {
+              const retryFail = await res.json();
+              failureMessage = retryFail.error || failureMessage;
+            } catch {
+              // The original response body was already read; preserve its error.
+            }
+          }
+          throw new Error(failureMessage);
+        }
       }
 
       await fetchDbData(); // Refresh list cleanly
       if (dueDateChanged) {
         alert('Due date updated successfully.');
       }
+      return true;
     } catch (err: any) {
       alert(err.message);
-    } finally {
-      setDataLoading(false);
-    }
-  };
-
-  const handleEscalateTicket = async (ticketId: string, escalationType: 'Manual' | 'Auto-SLA-Breach') => {
-    if (!token) return 'Your session has expired. Please sign in again.';
-    try {
-      setDataLoading(true);
-      const res = await fetch(`/api/tickets/${ticketId}/escalate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ escalationType })
-      });
-
-      if (!res.ok) {
-        const fail = await res.json();
-        throw new Error(fail.error || 'Ticket escalation failed on backend.');
-      }
-
-      await fetchDbData(); // Refresh list cleanly
-      return null;
-    } catch (err: any) {
-      console.warn('Escalation failed:', err.message);
-      return err.message || 'Ticket escalation failed. Please try again.';
+      return false;
     } finally {
       setDataLoading(false);
     }
@@ -953,7 +981,6 @@ export default function App() {
               companyUsers={companyUsers}
             onClose={() => setSelectedTicketId(null)}
             onUpdateTicket={handleUpdateTicketInput}
-            onEscalateTicket={handleEscalateTicket}
             sentEmails={sentEmails}
           />
         ) : (

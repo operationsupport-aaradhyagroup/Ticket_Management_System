@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Ticket, TicketStatus, SLAStatus, SLAUnit, UserSession, TicketPriority, SentEmail, TicketRemarkItem } from '../types';
 import { formatSLACountdown, computeSLAStatus, calculateDueDate, formatDateTime } from '../utils';
-import { X, Clock, User, ShieldAlert, AlertTriangle, ArrowLeft, Send, CheckCircle2, RefreshCw, FileText, Mail } from 'lucide-react';
+import { X, Clock, User, ShieldAlert, ArrowLeft, Send, CheckCircle2, RefreshCw, FileText, Mail } from 'lucide-react';
 
 interface TicketDetailViewProps {
   ticket: Ticket;
@@ -10,8 +10,7 @@ interface TicketDetailViewProps {
   isAdmin: boolean;
   companyUsers: UserSession[];
   onClose: () => void;
-  onUpdateTicket: (updatedTicket: Ticket) => void;
-  onEscalateTicket?: (ticketId: string, escalationType: 'Manual' | 'Auto-SLA-Breach') => Promise<string | null>;
+  onUpdateTicket: (updatedTicket: Ticket) => Promise<boolean>;
   sentEmails?: SentEmail[];
 }
 
@@ -29,7 +28,6 @@ export default function TicketDetailView({
   companyUsers,
   onClose,
   onUpdateTicket,
-  onEscalateTicket,
   sentEmails = []
 }: TicketDetailViewProps) {
   const toDateTimeLocalInput = (value: string) => {
@@ -45,8 +43,6 @@ export default function TicketDetailView({
   const [newRemark, setNewRemark] = useState('');
   const [localRemarks, setLocalRemarks] = useState<TicketRemarkItem[]>(ticket.remarks || []);
   const [editableDueDate, setEditableDueDate] = useState(toDateTimeLocalInput(ticket.slaDueDate));
-  const [escalationError, setEscalationError] = useState<string | null>(null);
-  const [isEscalating, setIsEscalating] = useState(false);
 
   // Manual SLA Override Panel State
   const [showSlaOverride, setShowSlaOverride] = useState(false);
@@ -64,7 +60,6 @@ export default function TicketDetailView({
     setNewRemark('');
     setLocalRemarks(ticket.remarks || []);
     setEditableDueDate(toDateTimeLocalInput(ticket.slaDueDate));
-    setEscalationError(null);
   }, [ticket]);
 
   // Robust agents resolver list
@@ -231,7 +226,7 @@ export default function TicketDetailView({
     onUpdateTicket(updatedTicket);
   };
 
-  const handleAddRemark = (e: React.FormEvent) => {
+  const handleAddRemark = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRemark.trim()) return;
 
@@ -256,22 +251,17 @@ export default function TicketDetailView({
       action: `Added a discussion remark on the ticket conversation thread`
     });
 
-    onUpdateTicket({
+    const saved = await onUpdateTicket({
       ...ticket,
       remarks,
       history: historyEntries
     });
-    setNewRemark('');
-  };
 
-  const handleEscalate = async () => {
-    if (!onEscalateTicket || isEscalating) return;
-
-    setEscalationError(null);
-    setIsEscalating(true);
-    const error = await onEscalateTicket(ticket.id, 'Manual');
-    if (error) setEscalationError(error);
-    setIsEscalating(false);
+    if (saved) {
+      setNewRemark('');
+    } else {
+      setLocalRemarks(ticketRemarks);
+    }
   };
 
   // Override SLA triggers
@@ -352,11 +342,11 @@ export default function TicketDetailView({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 text-xs text-gray-400">
               <div>
-                <span className="block font-medium text-gray-400">File Submitter</span>
+                <span className="block font-medium text-gray-400">Ticket Raised By</span>
                 <span className="text-gray-700 font-semibold">{ticket.creatorName}</span>
               </div>
               <div>
-                <span className="block font-medium text-gray-400">Submitted On</span>
+                <span className="block font-medium text-gray-400">Created Date</span>
                 <span className="text-gray-700 font-semibold">{formatDateTime(ticket.createdAt)}</span>
               </div>
             </div>
@@ -440,34 +430,6 @@ export default function TicketDetailView({
                   </div>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* Manual Escalation CTA Box */}
-          {!ticket.isEscalated && ticketStatus !== 'Resolved' && ticketStatus !== 'Closed' && (
-            <div className="bg-red-50/70 border border-red-100 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="space-y-1">
-                <h4 className="text-xs font-bold text-red-900 flex items-center gap-1.5">
-                  <AlertTriangle className="w-4 h-4 text-red-600 animate-pulse" />
-                  Operator SLA Escalation Desk
-                </h4>
-                <p className="text-[11px] text-red-700 max-w-md">
-                  Trigger escalation to the head of <strong>{ticket.departmentName}</strong> department. This records an escalation event and routes a notification to the configured escalation owner.
-                </p>
-                {escalationError && (
-                  <p role="alert" className="max-w-md rounded-lg border border-red-200 bg-white/80 px-3 py-2 text-[11px] font-medium text-red-800">
-                    {escalationError}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={handleEscalate}
-                disabled={isEscalating}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs transition duration-150 shrink-0 shadow-xs disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isEscalating ? 'Escalating…' : 'Escalate Complaint'}
-              </button>
             </div>
           )}
 
@@ -618,7 +580,7 @@ export default function TicketDetailView({
           {/* Status & Assignment Box */}
           <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-xs space-y-4">
             <h3 className="font-bold text-gray-800 text-sm uppercase tracking-wide border-b border-gray-50 pb-2">
-              Operational Desk Controls
+              Ticket Information
             </h3>
 
             <form onSubmit={handleSaveStandardInfo} className="space-y-4">
