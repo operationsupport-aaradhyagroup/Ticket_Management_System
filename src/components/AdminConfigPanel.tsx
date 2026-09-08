@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ComplaintCategory, CreateUserPayload, Department, EscalationRule, SLAUnit, TicketPriority, UserSession } from '../types';
-import { Landmark, Plus, Trash2, ShieldCheck, FolderPlus, Clock, AlertCircle, Database, RefreshCw, KeyRound, Search, UserPlus, Building2, Briefcase, Mail, IdCard, GitBranch } from 'lucide-react';
+import { Landmark, Plus, Trash2, FolderPlus, Clock, Database, RefreshCw, KeyRound, Search, UserPlus, Building2, Briefcase, Mail, IdCard, GitBranch } from 'lucide-react';
 import IntegrationApiPanel from './IntegrationApiPanel';
 
 interface AdminConfigPanelProps {
@@ -608,11 +608,34 @@ export default function AdminConfigPanel({
         .settings-shell[data-active-section='escalation'] .settings-section:not([data-settings-section='escalation']),
         .settings-shell[data-active-section='integrations'] .settings-section:not([data-settings-section='integrations']),
         .settings-shell[data-active-section='system'] .settings-section:not([data-settings-section='system']) { display: none; }
+        .settings-shell[data-active-section='employees'] .settings-left-column { display: none; }
         @media (min-width: 1280px) {
           .settings-shell[data-active-section='escalation'] .settings-left-column { display: none; }
           .settings-shell[data-active-section='escalation'] .settings-right-column { grid-column: 1 / -1; }
+          .settings-shell[data-active-section='organization'] .settings-content-grid {
+            grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+            overflow: hidden;
+          }
+          .settings-shell[data-active-section='organization'] .settings-left-column,
+          .settings-shell[data-active-section='organization'] .settings-right-column {
+            height: 100%;
+            min-height: 0;
+          }
+          .settings-shell[data-active-section='employees'] .settings-content-grid {
+            display: flex;
+            flex-direction: column;
+            align-content: stretch;
+          }
+          .settings-shell[data-active-section='employees'] .settings-right-column {
+            order: 1;
+            width: 100%;
+          }
+          .settings-shell[data-active-section='employees'] .settings-left-column {
+            display: none;
+          }
           .settings-shell[data-active-section='integrations'] .settings-left-column,
           .settings-shell[data-active-section='integrations'] .settings-right-column { display: none; }
+          .settings-shell[data-active-section='integrations'] .settings-content-grid { display: none; }
           .settings-shell[data-active-section='system'] .settings-left-column { grid-column: 1 / -1; }
           .settings-shell .settings-section { border-radius: 20px; padding: 1rem; }
           .settings-shell .settings-content-grid { gap: 1rem; }
@@ -620,7 +643,7 @@ export default function AdminConfigPanel({
           .settings-shell .integration-api-panel > section { border-radius: 20px; padding: 1rem; }
         }
       `}</style>
-      <aside className="h-fit rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] xl:self-start">
+      <aside className="h-fit rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] xl:h-full xl:min-h-0 xl:self-start xl:overflow-y-auto">
         <div className="border-b border-slate-100 px-2 pb-4">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Admin Portal</p>
           <h2 className="mt-1 whitespace-nowrap text-base font-black text-slate-900">Admin Configuration</h2>
@@ -628,16 +651,16 @@ export default function AdminConfigPanel({
         </div>
         <nav className="mt-3 grid gap-1" aria-label="Settings sections">
           {[
-            { id: 'organization', label: 'Organization & SLA', description: 'Departments and SLA rules', icon: Landmark },
-            { id: 'employees', label: 'Employees', description: 'Accounts and password reset', icon: UserPlus },
-            { id: 'escalation', label: 'Escalation', description: 'Designation routing ladder', icon: GitBranch },
-            { id: 'integrations', label: 'Integration & API', description: 'Email and developer access', icon: KeyRound },
+            { id: 'organization', label: 'SLA Management (Department Creation)', description: 'Department creation and SLA rules', icon: Landmark },
+            { id: 'employees', label: 'Employee Administration', description: 'Onboarding, directory and password reset', icon: UserPlus },
+            { id: 'escalation', label: 'Escalation Management', description: 'Designation routing ladder', icon: GitBranch },
+            { id: 'integrations', label: 'Integration & API Management', description: 'Email and developer access', icon: KeyRound },
             { id: 'system', label: 'System Controls', description: 'Ticket maintenance tools', icon: Database }
           ].map(({ id, label, description, icon: Icon }) => {
             const isActive = activeSettingsSection === id;
-            return <button key={id} type="button" onClick={() => setActiveSettingsSection(id as typeof activeSettingsSection)} className={`flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'}`}>
-              <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? 'text-white' : 'text-blue-600'}`} />
-              <span><span className="block text-sm font-bold">{label}</span><span className={`mt-0.5 block text-[11px] ${isActive ? 'text-blue-50' : 'text-slate-400'}`}>{description}</span></span>
+            return <button key={id} type="button" onClick={() => setActiveSettingsSection(id as typeof activeSettingsSection)} className={`flex items-start gap-2 rounded-xl px-2.5 py-2 text-left transition ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'}`}>
+              <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${isActive ? 'text-white' : 'text-blue-600'}`} />
+              <span className="min-w-0"><span className="block text-[12px] font-bold leading-4">{label}</span><span className={`mt-0.5 block text-[10px] leading-3.5 ${isActive ? 'text-blue-50' : 'text-slate-400'}`}>{description}</span></span>
             </button>;
           })}
         </nav>
@@ -648,20 +671,7 @@ export default function AdminConfigPanel({
       {/* 1. DEPARTMENTS PANEL & DB SYNC (Left 1/3) */}
       <div className="settings-left-column min-w-0 space-y-6">
         
-        <div data-settings-section="organization" className="settings-section bg-white p-5 rounded-[26px] border border-slate-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
-          <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div className="flex items-center space-x-2">
-            <div className="rounded-2xl bg-blue-50 p-2 text-blue-600">
-              <Landmark className="w-4.5 h-4.5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-gray-800 text-sm">1. Select Department</h3>
-              <p className="text-[11px] text-gray-400">Choose where its SLA rules will apply.</p>
-            </div>
-            </div>
-            <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{departments.length}</span>
-          </div>
-
+        <div data-settings-section="organization" className="organization-department-panel settings-section bg-white p-5 rounded-[26px] border border-slate-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
         {/* Create Department Form */}
         <form onSubmit={handleCreateDept} className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
           <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Add Department</label>
@@ -686,7 +696,7 @@ export default function AdminConfigPanel({
         </form>
 
         {/* Departments List */}
-        <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
+        <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1 xl:max-h-none xl:min-h-0 xl:flex-1">
           {sortedDepartments.map(d => {
             const isSelected = d.id === selectedDeptId;
             return (
@@ -706,25 +716,6 @@ export default function AdminConfigPanel({
                 </div>
                 <div className="flex items-center space-x-2 shrink-0">
                   {isSelected && <span className="rounded-full bg-blue-600 px-2 py-1 text-[9px] font-bold text-white">Selected</span>}
-                  {d.isCustom && onDeleteDepartment && (
-                    <button
-                      type="button"
-                      id={`btn-del-dept-${d.id}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Delete the department and all its associated category SLAs?`)) {
-                          onDeleteDepartment(d.id);
-                          if (selectedDeptId === d.id && departments.length > 1) {
-                            setSelectedDeptId(departments[0].id);
-                          }
-                        }
-                      }}
-                      className="p-1 hover:bg-rose-50 rounded-md text-rose-500 hover:text-rose-600 transition-colors"
-                      title="Delete Custom Department"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </div>
               </div>
             );
@@ -865,7 +856,7 @@ export default function AdminConfigPanel({
       </div>
       )}
 
-      <div data-settings-section="employees" className="settings-section bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+      <div data-settings-section="employees" className="settings-section bg-white p-5 rounded-t-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center justify-between gap-3 pb-3 border-b border-gray-50">
           <div>
             <h4 className="text-sm font-bold text-slate-800">Employee Directory</h4>
@@ -919,7 +910,7 @@ export default function AdminConfigPanel({
         </div>
       </div>
 
-      <div data-settings-section="employees" className="settings-section bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+      <div data-settings-section="employees" className="settings-section -mt-px bg-white p-5 rounded-b-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
           <div className="rounded-2xl bg-indigo-50 p-2 text-indigo-600">
             <KeyRound className="w-4.5 h-4.5" />
@@ -991,7 +982,7 @@ export default function AdminConfigPanel({
       </div>
       </div>
 
-      <div className="settings-right-column min-w-0 flex flex-col gap-6">
+      <div className="settings-right-column min-w-0 flex flex-col gap-6 xl:min-h-0">
       <div data-settings-section="employees" className="settings-section order-2 bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
           <div className="rounded-2xl bg-emerald-50 p-2 text-emerald-600">
@@ -1165,6 +1156,81 @@ export default function AdminConfigPanel({
         </form>
       </div>
 
+      <div data-settings-section="employees" className="settings-section bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
+        <div className="flex items-center justify-between gap-3 border-b border-gray-50 pb-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">Employee Directory</h3>
+            <p className="text-[11px] text-slate-400">Manage employee accounts and reset passwords.</p>
+          </div>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-bold text-slate-600">
+            {managedEmployees.length} Employees
+          </span>
+        </div>
+
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={employeeListSearch}
+            onChange={(e) => setEmployeeListSearch(e.target.value)}
+            placeholder="Search employees by name, email, ID, or department"
+            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs"
+          />
+        </div>
+
+        {passwordResetStatus && (
+          <div className={`rounded-xl border px-3 py-2.5 text-xs ${
+            passwordResetStatus.type === 'success'
+              ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
+              : 'border-rose-100 bg-rose-50 text-rose-800'
+          }`}>
+            {passwordResetStatus.message}
+          </div>
+        )}
+
+        <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+          {managedEmployees.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-xs text-slate-400">
+              No employee accounts matched your search.
+            </div>
+          ) : (
+            managedEmployees.map((user) => (
+              <div key={user.email} className="rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm font-semibold text-slate-800 break-words">{user.name}</p>
+                    <p className="text-[10px] font-mono text-slate-400 break-all">{user.email}</p>
+                    <p className="text-[11px] leading-relaxed text-slate-500">
+                      {(user.departmentName || 'No Department')} • {(user.designation || 'No Designation')} • {(user.employeeId || 'No Employee ID')}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleResetEmployeePassword(user)}
+                      disabled={resettingEmail === user.email}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
+                      {resettingEmail === user.email ? 'Resetting...' : 'Reset Password'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteEmployee(user)}
+                      disabled={deletingEmployeeEmail === user.email}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 py-2 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {deletingEmployeeEmail === user.email ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
       {false && <>
       <div className="order-3 bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 border-b border-gray-50 pb-3">
@@ -1250,7 +1316,7 @@ export default function AdminConfigPanel({
             <GitBranch className="w-4.5 h-4.5" />
           </div>
           <div>
-            <h3 className="font-bold text-gray-800 text-sm">Escalation Ladder</h3>
+            <h3 className="font-bold text-gray-800 text-sm">Escalation Matrix</h3>
             <p className="text-[11px] text-gray-400">Set designation-wise escalation flow for the selected department.</p>
           </div>
         </div>
@@ -1282,9 +1348,6 @@ export default function AdminConfigPanel({
           </div>
 
           <div>
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">
-              Designation Ladder
-            </label>
             <textarea
               rows={4}
               value={escalationLadderInput}
@@ -1293,7 +1356,7 @@ export default function AdminConfigPanel({
               className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-xs leading-relaxed"
             />
             <p className="mt-1.5 text-[11px] leading-relaxed text-gray-500">
-              Add designation levels in escalation order, separated by commas. Final fallback remains the department head.
+              Add designation levels in escalation order, separated by commas. <strong>Note:</strong> If the matrix is unavailable, the department head is the final fallback.
             </p>
           </div>
 
@@ -1309,18 +1372,17 @@ export default function AdminConfigPanel({
             className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-amber-300"
           >
             <GitBranch className="h-4 w-4" />
-            {savingEscalationRule ? 'Saving Ladder...' : 'Save Escalation Ladder'}
+            {savingEscalationRule ? 'Saving Matrix...' : 'Save Escalation Matrix'}
           </button>
         </form>
 
         <div className="border-t border-slate-100 pt-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h4 className="text-sm font-bold text-slate-800">All Department Ladders</h4>
-              <p className="text-[11px] text-slate-400">Auto-generated from current department and designation data, with manual edits supported.</p>
+              <h4 className="text-sm font-bold text-slate-800">Matrix List</h4>
             </div>
             <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-bold text-slate-600">
-              {displayedEscalationRules.length} Ladders
+              Matrix
             </span>
           </div>
 
@@ -1357,22 +1419,8 @@ export default function AdminConfigPanel({
       </div>
 
       {/* 2. CATEGORIES AND SLA CONFIGURATION (Right 2/3) */}
-      <div data-settings-section="organization" className="settings-section order-1 bg-white p-5 rounded-[28px] border border-gray-200 shadow-[0_18px_50px_rgba(15,23,42,0.07)] flex flex-col space-y-4">
+      <div data-settings-section="organization" className="organization-sla-panel settings-section order-1 bg-white p-5 rounded-[28px] border border-gray-200 shadow-[0_18px_50px_rgba(15,23,42,0.07)] flex flex-col space-y-4 xl:h-full xl:min-h-0">
         
-        {/* Selected department header */}
-        <div className="pb-4 border-b border-gray-100 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
-          <div className="space-y-0.5 min-w-0">
-            <h3 className="font-bold text-gray-800 text-sm">
-              2. Configure SLA Rules: {selectedDepartment?.name || 'Select Department'}
-            </h3>
-            <p className="text-xs text-gray-400">Each category receives one default priority and response window.</p>
-          </div>
-          <div className="flex items-center space-x-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-full w-fit">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Admin Control Panel</span>
-          </div>
-        </div>
-
         {/* Dynamic Category Creation Form */}
         {selectedDeptId ? (
           <form onSubmit={handleCreateCat} className="bg-[linear-gradient(135deg,#f8fbff,#f8fafc)] p-4 rounded-[24px] border border-slate-200 space-y-4 shadow-inner">
@@ -1383,10 +1431,10 @@ export default function AdminConfigPanel({
               <span>Add a category rule for {selectedDepartment?.name}</span>
             </h4>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(140px,1.25fr)_minmax(125px,1fr)_minmax(100px,0.85fr)_minmax(120px,1fr)_auto]">
               {/* Category Name Column */}
               <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Category Title</label>
+                <label className="block whitespace-nowrap text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Category Title</label>
                 <input
                   id="input-new-cat-name"
                   type="text"
@@ -1400,7 +1448,7 @@ export default function AdminConfigPanel({
 
               {/* Predefined Priority Column */}
               <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Default Priority</label>
+                <label className="block whitespace-nowrap text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Default Priority</label>
                 <select
                   id="select-new-cat-priority"
                   value={defaultPriority}
@@ -1416,7 +1464,7 @@ export default function AdminConfigPanel({
 
               {/* Default SLA Value Column */}
               <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">SLA Duration</label>
+                <label className="block whitespace-nowrap text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">SLA Duration</label>
                 <input
                   id="input-new-cat-sla-value"
                   type="number"
@@ -1430,26 +1478,28 @@ export default function AdminConfigPanel({
 
               {/* Default SLA Unit Column */}
               <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Duration Unit</label>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <select
-                    id="select-new-cat-sla-unit"
-                    value={slaUnit}
-                    onChange={(e) => setSlaUnit(e.target.value as SLAUnit)}
-                    className="flex-1 text-xs border border-gray-200 rounded-xl p-2.5 bg-white"
-                  >
-                    <option value="minutes">Minutes</option>
-                    <option value="hours">Hours</option>
-                    <option value="days">Days</option>
-                  </select>
-                  <button
-                    id="btn-add-cat"
-                    type="submit"
-                    className="px-4 py-2.5 bg-gray-900 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center transition-all shadow-sm"
-                  >
-                    Add
-                  </button>
-                </div>
+                <label className="block whitespace-nowrap text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Duration Unit</label>
+                <select
+                  id="select-new-cat-sla-unit"
+                  value={slaUnit}
+                  onChange={(e) => setSlaUnit(e.target.value as SLAUnit)}
+                  className="w-full text-xs border border-gray-200 rounded-xl p-2.5 bg-white"
+                >
+                  <option value="minutes">Minutes</option>
+                  <option value="hours">Hours</option>
+                  <option value="days">Days</option>
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button
+                  id="btn-add-cat"
+                  type="submit"
+                  aria-label="Add SLA category rule"
+                  title="Add SLA category rule"
+                  className="h-9 w-9 shrink-0 rounded-lg bg-gray-900 text-white transition-all shadow-sm hover:bg-blue-700 flex items-center justify-center"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
           </form>
@@ -1460,7 +1510,7 @@ export default function AdminConfigPanel({
         )}
 
         {/* Category List */}
-        <div className="flex-1 space-y-2 mt-2">
+        <div className="flex-1 min-h-0 space-y-2 mt-2 xl:overflow-y-auto xl:pr-1">
           <div className="flex items-center justify-between gap-3">
             <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">3. Review Active SLA Rules</span>
             <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{currentCategories.length} total</span>
@@ -1516,19 +1566,11 @@ export default function AdminConfigPanel({
           )}
         </div>
 
-        {/* Informative Guidance */}
-        <div className="p-3.5 bg-[linear-gradient(135deg,#eff6ff,#f5f9ff)] text-blue-700 rounded-2xl flex items-start space-x-2 text-[11px] font-medium border border-blue-100">
-          <AlertCircle className="w-4.5 h-4.5 text-blue-500 shrink-0 mt-0.5" />
-          <p>
-            When users file complaints under these categories, the system will instantly load and lock operational SLAs unless an Admin manually uses custom parameters.
-          </p>
-        </div>
-
       </div>
       </div>
 
     </div>
-      <div data-settings-section="integrations" className="settings-section md:col-span-3">
+      <div data-settings-section="integrations" className="settings-integration-panel settings-section min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-2">
         <IntegrationApiPanel token={token} />
       </div>
       </div>

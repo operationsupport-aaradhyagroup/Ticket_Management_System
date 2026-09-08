@@ -38,6 +38,16 @@ interface EmployeeOptions {
 }
 
 const HIDDEN_CATEGORY_IDS = new Set(['cat-it-1']);
+const ACTIVE_TAB_STORAGE_KEY = 'sla_active_tab';
+type ActiveTab = 'all' | 'raised' | 'assigned' | 'breached' | 'dashboard' | 'config';
+
+const getSavedActiveTab = (role?: UserSession['role']): ActiveTab => {
+  const savedTab = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY) as ActiveTab | null;
+  const adminTabs: ActiveTab[] = ['all', 'dashboard', 'config'];
+  const employeeTabs: ActiveTab[] = ['raised', 'assigned', 'breached'];
+  const allowedTabs = role === 'Admin' ? adminTabs : employeeTabs;
+  return savedTab && allowedTabs.includes(savedTab) ? savedTab : (role === 'Admin' ? 'all' : 'raised');
+};
 
 export default function App() {
   // Core Session authentication elements
@@ -63,7 +73,7 @@ export default function App() {
   const [apiError, setApiError] = useState<string | null>(null);
 
   // Active UI Navigation tabs: 'all' | 'raised' | 'assigned' | 'dashboard' | 'config'
-  const [activeTab, setActiveTab] = useState<'all' | 'raised' | 'assigned' | 'breached' | 'dashboard' | 'config'>('raised');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => getSavedActiveTab());
   
   // Selected ticket for detailed view
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
@@ -97,7 +107,7 @@ export default function App() {
         if (res.ok) {
           const data = await res.json();
           setCurrentUser(data.user);
-          setActiveTab(data.user.role === 'Admin' ? 'all' : 'raised');
+          setActiveTab(getSavedActiveTab(data.user.role));
         } else {
           // Token expired or invalid
           handleLogout();
@@ -110,6 +120,10 @@ export default function App() {
     }
     checkAuth();
   }, [token]);
+
+  useEffect(() => {
+    localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
+  }, [activeTab]);
 
   // 2. Fetch active db metrics & variables once authenticated
   const fetchDbData = async () => {
@@ -222,11 +236,12 @@ export default function App() {
     localStorage.setItem('sla_token', newToken);
     setToken(newToken);
     setCurrentUser(user);
-    setActiveTab(user.role === 'Admin' ? 'all' : 'raised');
+    setActiveTab(getSavedActiveTab(user.role));
   };
 
   const handleLogout = () => {
     localStorage.removeItem('sla_token');
+    localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
     setToken(null);
     setCurrentUser(null);
     setDepartments([]);
