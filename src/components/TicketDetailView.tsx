@@ -105,14 +105,16 @@ export default function TicketDetailView({
   const isTicketRaiser = currentUser.email.toLowerCase() === ticket.creatorEmail.toLowerCase();
   const canSubmitForSignoff = (ticket.status === 'Open' || ticket.status === 'In Progress') && isAssignedToCurrentUser;
   const canGiveFinalSignoff = ticket.status === 'Resolved' && isTicketRaiser;
-  const canAdvanceStatus = canSubmitForSignoff || canGiveFinalSignoff;
+  const canAdvanceStatus = isAdmin || canSubmitForSignoff || canGiveFinalSignoff;
 
   // Priority and SLA due dates are administrative controls. An assigned employee
   // can progress work, but cannot change the service commitment for the ticket.
   const canEditDueDate = isAdmin;
   const statusFlow: TicketStatus[] = ['Open', 'Resolved', 'Closed'];
   const statusIndex = statusFlow.indexOf(ticket.status);
-  const availableStatusOptions = !canAdvanceStatus
+  const availableStatusOptions = isAdmin
+    ? statusFlow
+    : !canAdvanceStatus
     ? [ticket.status]
     : ticket.status === 'Resolved'
       ? ['Resolved', 'Closed']
@@ -563,7 +565,9 @@ export default function TicketDetailView({
                   ))}
                 </select>
                 <p className="text-[10px] text-gray-400 mt-1">
-                  {canSubmitForSignoff
+                  {isAdmin
+                    ? 'Administrators can update the ticket status at any stage.'
+                    : canSubmitForSignoff
                     ? 'Only the assigned employee can submit this ticket for signoff.'
                     : canGiveFinalSignoff
                       ? 'As the ticket raiser, you can provide the final signoff.'

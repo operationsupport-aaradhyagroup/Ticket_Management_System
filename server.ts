@@ -2105,7 +2105,7 @@ app.get('/cron', async (req, res) => {
       // server prevents a manually crafted request from reopening or regressing a
       // ticket after it has been advanced.
       const statusFlow = ['Open', 'Resolved', 'Closed'];
-      if (status !== undefined && status !== existingTicket.status) {
+      if (!isAdminUser && status !== undefined && status !== existingTicket.status) {
         const currentStatusIndex = statusFlow.indexOf(existingTicket.status);
         const nextStatusIndex = statusFlow.indexOf(status);
         const isLegacyInProgressTransition = existingTicket.status === 'In Progress' && status === 'Resolved';

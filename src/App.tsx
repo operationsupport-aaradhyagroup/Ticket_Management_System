@@ -758,11 +758,11 @@ export default function App() {
           <div className="absolute inset-0 opacity-[0.055] [background-image:linear-gradient(rgba(255,255,255,0.8)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.8)_1px,transparent_1px)] [background-size:38px_38px]" />
           <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/12 to-transparent" />
         </div>
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           
           {/* Logo & Headline */}
           <div className="flex min-w-0 items-start sm:items-center gap-3 sm:gap-4 xl:flex-1">
-            <div className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-[22px] bg-white p-1.5 shadow-[0_16px_42px_rgba(15,23,42,0.34)] ring-1 ring-white/20 flex items-center justify-center overflow-hidden">
+            <div className="h-12 w-12 sm:h-14 sm:w-14 shrink-0 rounded-[18px] bg-white p-1.5 shadow-[0_16px_42px_rgba(15,23,42,0.34)] ring-1 ring-white/20 flex items-center justify-center overflow-hidden">
               <img
                 src="/aaradhya-group-logo.png"
                 alt="Aaradhya Group logo"
