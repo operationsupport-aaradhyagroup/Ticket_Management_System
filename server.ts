@@ -222,7 +222,7 @@ const renderTicketEmailLayout = ({
   intro: string;
   summaryRows: Array<{ label: string; value: string; emphasis?: boolean; tone?: 'default' | 'danger' | 'success' | 'info' }>;
   alertTone?: 'blue' | 'red' | 'green';
-  alertText: string;
+  alertText?: string;
   ticketUrl?: string;
   ctaLabel?: string;
 }) => {
@@ -297,20 +297,19 @@ const renderTicketEmailLayout = ({
                   <td bgcolor="#ffffff" style="padding:14px 16px;${index < summaryRows.length - 1 ? 'border-bottom:1px solid #cbd5e1;' : ''}background:#ffffff;font-size:14px;line-height:1.5;${row.emphasis ? 'font-weight:700;' : row.label === 'Title' || row.label === 'Ticket ID' ? 'font-weight:600;' : ''}color:${toneColor(row.tone)};">${row.value}</td>
                 </tr>`).join('')}
               </table>
-              <div style="margin-top:22px;padding:16px 18px;background:${toneMap[alertTone].bg};border:1px solid ${toneMap[alertTone].border};border-radius:14px;">
+              ${alertText ? `<div style="margin-top:22px;padding:16px 18px;background:${toneMap[alertTone].bg};border:1px solid ${toneMap[alertTone].border};border-radius:14px;">
                 <p style="margin:0;font-size:13px;line-height:1.7;color:${toneMap[alertTone].text};">
                   <strong style="color:${toneMap[alertTone].text};">Action Required:</strong>
                   <span style="color:${toneMap[alertTone].text};">${alertText}</span>
                 </p>
-              </div>
+              </div>` : ''}
               ${ticketUrl ? `<div style="margin-top:24px;"><a href="${escapeHtml(ticketUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;font-size:14px;font-weight:bold;">${escapeHtml(ctaLabel || 'Open Ticket')}</a></div>` : ''}
             </td>
           </tr>
           <tr>
             <td bgcolor="#f8fafc" style="padding:20px 32px;background:#f8fafc;border-top:1px solid #cbd5e1;">
               <p style="margin:0;font-size:12px;line-height:1.7;color:#475569;">
-                Developed &amp; Managed by <strong>Nexora Automations</strong><br />
-                Aaradhya Group Ticket Management System
+                Developed &amp; Managed by <strong>Nexora Automations</strong>
               </p>
             </td>
           </tr>
@@ -325,10 +324,10 @@ const renderTicketEmailLayout = ({
 const buildAssignmentEmailHtml = (email: ISentEmail) => {
   const context = extractEmailContext(email);
   return renderTicketEmailLayout({
-    badge: 'Aaradhya Group Ticket Management',
+    badge: 'Aaradhya Service Desk',
     title: 'New Ticket Assigned',
     subtitle: '',
-    intro: `Hello <strong>${context.recipientName}</strong>,<br /><br />A complaint ticket has been assigned to you for action. Please review the details below and begin work as soon as possible.`,
+    intro: `Hello <strong>${context.recipientName}</strong>,<br /><br />A new ticket has been assigned to you. Please review the details and take the necessary action.`,
     summaryRows: [
       { label: 'Ticket ID', value: context.ticketId },
       { label: 'Title', value: context.ticketTitle },
@@ -338,8 +337,6 @@ const buildAssignmentEmailHtml = (email: ISentEmail) => {
       { label: 'SLA Due', value: context.slaDue },
       { label: 'Raised By', value: context.raisedBy }
     ],
-    alertTone: 'blue',
-    alertText: 'Please acknowledge the assignment, review the issue context, and update the ticket status as you begin work.',
     ticketUrl: context.ticketUrl,
     ctaLabel: 'Open Assigned Ticket'
   });
@@ -352,7 +349,7 @@ const buildEscalationEmailHtml = (email: ISentEmail) => {
   );
 
   return renderTicketEmailLayout({
-    badge: 'Aaradhya Group Ticket Management',
+    badge: 'Aaradhya Service Desk',
     title: 'Urgent Ticket Escalation',
     subtitle: 'A complaint ticket requires immediate attention due to escalation.',
     intro: `Hello <strong>${context.recipientName}</strong>,<br /><br />Ticket <strong>${context.ticketId}</strong> has been escalated to you because of <strong>${escalationReason}</strong>.`,
@@ -375,7 +372,7 @@ const buildEscalationEmailHtml = (email: ISentEmail) => {
 const buildClosureEmailHtml = (email: ISentEmail) => {
   const context = extractEmailContext(email);
   return renderTicketEmailLayout({
-    badge: 'Aaradhya Group Ticket Management',
+    badge: 'Aaradhya Service Desk',
     title: 'Complaint Ticket Closed',
     subtitle: 'Your complaint has been completed and marked as closed.',
     intro: `Hello <strong>${context.recipientName}</strong>,<br /><br />Your complaint ticket has been successfully marked as closed. Here is the final summary of the request.`,
