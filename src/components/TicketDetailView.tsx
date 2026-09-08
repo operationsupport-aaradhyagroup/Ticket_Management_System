@@ -103,14 +103,22 @@ export default function TicketDetailView({
     return localRemarks;
   }, [localRemarks]);
 
-  const isTicketCreator = !isAdmin && currentUser.email.toLowerCase() === ticket.creatorEmail.toLowerCase();
-
-  const canEditDueDate = useMemo(() => {
+  const isAssignedToCurrentUser = useMemo(() => {
     const currentEmail = currentUser.email.toLowerCase();
-    const assignedEmail = (ticket.assignedAgentEmail || '').toLowerCase();
-    const assignedName = (ticket.assignedAgent || '').trim().toLowerCase();
-    return isAdmin || assignedEmail === currentEmail || (!!currentUser.name && assignedName === currentUser.name.trim().toLowerCase());
-  }, [currentUser.email, currentUser.name, isAdmin, ticket.assignedAgent, ticket.assignedAgentEmail]);
+    const currentName = (currentUser.name || '').trim().toLowerCase();
+    return (ticket.assignedAgentEmail || '').trim().toLowerCase() === currentEmail ||
+      (!!currentName && (ticket.assignedAgent || '').trim().toLowerCase() === currentName);
+  }, [currentUser.email, currentUser.name, ticket.assignedAgent, ticket.assignedAgentEmail]);
+  const canAdvanceStatus = isAdmin || isAssignedToCurrentUser;
+
+  // Priority and SLA due dates are administrative controls. An assigned employee
+  // can progress work, but cannot change the service commitment for the ticket.
+  const canEditDueDate = isAdmin;
+  const statusFlow: TicketStatus[] = ['Open', 'In Progress', 'Resolved', 'Closed'];
+  const statusIndex = statusFlow.indexOf(ticket.status);
+  const availableStatusOptions = !canAdvanceStatus
+    ? [ticket.status]
+    : statusFlow.filter((status, index) => index === statusIndex || index === statusIndex + 1);
 
   // SLA Container Styles
   const slaContainerStyles = useMemo(() => {
@@ -179,7 +187,7 @@ export default function TicketDetailView({
       });
     }
 
-    if (ticketPriority !== ticket.priority) {
+    if (isAdmin && ticketPriority !== ticket.priority) {
       historyEntries.push({
         id: 'hist-pr-' + Date.now(),
         timestamp,
@@ -214,7 +222,7 @@ export default function TicketDetailView({
       assignedAgentEmail: isAdmin
         ? (assignedAgentRecord?.email || ticket.assignedAgentEmail || '')
         : (ticket.assignedAgentEmail || ''),
-      priority: ticketPriority,
+      priority: isAdmin ? ticketPriority : ticket.priority,
       slaDueDate: nextDueDate,
       resolvedAt: ticketStatus === 'Resolved' ? timestamp : ticketStatus === 'Closed' ? (ticket.resolvedAt || timestamp) : null,
       history: historyEntries
@@ -621,15 +629,19 @@ export default function TicketDetailView({
                   id="select-ticket-status"
                   value={ticketStatus}
                   onChange={(e) => setTicketStatus(e.target.value as TicketStatus)}
-                  disabled={isTicketCreator}
+                  disabled={!canAdvanceStatus}
                   className="w-full text-xs font-medium border border-gray-200 rounded-lg p-2.5 bg-white focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
                 >
-                  <option value="Open">🟢 Open</option>
-                  <option value="In Progress">🔵 In Progress</option>
-                  <option value="Resolved">✅ Resolved</option>
-                  <option value="Closed">🔒 Closed</option>
+                  {availableStatusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {status === 'Open' && '🟢 Open'}
+                      {status === 'In Progress' && '🔵 In Progress'}
+                      {status === 'Resolved' && '✅ Resolved'}
+                      {status === 'Closed' && '🔒 Closed'}
+                    </option>
+                  ))}
                 </select>
-                <p className="text-[10px] text-gray-400 mt-1">{isTicketCreator ? 'Ticket creators cannot change status or priority.' : 'Transitioning to Resolved stops the SLA clock permanently.'}</p>
+                <p className="text-[10px] text-gray-400 mt-1">{canAdvanceStatus ? 'Status can only move forward: Open → In Progress → Resolved → Closed.' : 'Only the assigned employee can progress this ticket.'}</p>
               </div>
 
               {/* Priority Select */}
@@ -639,7 +651,7 @@ export default function TicketDetailView({
                   id="select-ticket-priority"
                   value={ticketPriority}
                   onChange={(e) => setTicketPriority(e.target.value as TicketPriority)}
-                  disabled={isTicketCreator}
+                  disabled={!isAdmin}
                   className="w-full text-xs font-medium border border-gray-200 rounded-lg p-2.5 bg-white focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
                 >
                   <option value="Low">Low Priority</option>
@@ -647,6 +659,7 @@ export default function TicketDetailView({
                   <option value="High">High Priority</option>
                   <option value="Critical">Critical Priority</option>
                 </select>
+                <p className="text-[10px] text-gray-400 mt-1">Only an admin can change priority or the due date.</p>
               </div>
 
               {/* Agent Assignment Field */}

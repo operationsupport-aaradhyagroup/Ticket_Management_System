@@ -254,7 +254,7 @@ export default function TicketList({
                       </span>
                       <span className="text-xs text-gray-400 flex items-center">
                         <User className="w-3 h-3 mr-1" />
-                        {t.creatorName.split(' ')[0]}
+                        Assigned to {t.assignedAgent?.split(' ')[0] || 'Unassigned'}
                       </span>
                     </div>
                     <h4 className="font-semibold text-gray-800 text-sm leading-snug break-words">
@@ -351,7 +351,7 @@ export default function TicketList({
                           </span>
                           <span className="text-xs text-gray-400 flex items-center">
                             <User className="w-3 h-3 mr-1" />
-                            {t.creatorName.split(' ')[0]}
+                            Assigned to {t.assignedAgent?.split(' ')[0] || 'Unassigned'}
                           </span>
                         </div>
                         <h4 className="font-semibold text-gray-800 text-sm truncate group-hover:text-blue-600 transition-colors">

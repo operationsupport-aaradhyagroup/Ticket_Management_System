@@ -2097,14 +2097,30 @@ app.get('/cron', async (req, res) => {
         (!!assignedAgentNameNormalized && assignedAgentNameNormalized === actorName) ||
         (!!assignedAgentNameNormalized && assignedAgentNameNormalized.includes(actorName));
 
+      // A ticket's workflow is deliberately one way. Keeping this check on the
+      // server prevents a manually crafted request from reopening or regressing a
+      // ticket after it has been advanced.
+      const statusFlow = ['Open', 'In Progress', 'Resolved', 'Closed'];
+      if (status !== undefined && status !== existingTicket.status) {
+        const currentStatusIndex = statusFlow.indexOf(existingTicket.status);
+        const nextStatusIndex = statusFlow.indexOf(status);
+
+        if (currentStatusIndex < 0 || nextStatusIndex !== currentStatusIndex + 1) {
+          res.status(400).json({
+            error: `Status can only advance one step: ${existingTicket.status} → ${statusFlow[currentStatusIndex + 1] || 'no further status'}.`
+          });
+          return;
+        }
+      }
+
       if (!isAdminUser) {
         const dueDateChanged = slaDueDate !== undefined && slaDueDate !== existingTicket.slaDueDate;
         const forbiddenChanges: string[] = [];
 
-        if (isTicketCreator && status !== undefined && status !== existingTicket.status) {
+        if (status !== undefined && status !== existingTicket.status && !isAssignedUser) {
           forbiddenChanges.push('ticket status');
         }
-        if (isTicketCreator && priority !== undefined && priority !== existingTicket.priority) {
+        if (priority !== undefined && priority !== existingTicket.priority) {
           forbiddenChanges.push('priority');
         }
         if (assignedAgent !== undefined && assignedAgent !== existingTicket.assignedAgent) {
@@ -2122,7 +2138,7 @@ app.get('/cron', async (req, res) => {
         if (slaDurationUnit !== undefined && slaDurationUnit !== existingTicket.slaDurationUnit) {
           forbiddenChanges.push('SLA unit');
         }
-        if (dueDateChanged && !isAssignedUser) {
+        if (dueDateChanged) {
           forbiddenChanges.push('due date');
         }
         if (isEscalated !== undefined && isEscalated !== existingTicket.isEscalated) {
@@ -2131,7 +2147,7 @@ app.get('/cron', async (req, res) => {
 
         if (forbiddenChanges.length > 0) {
           res.status(403).json({
-            error: `You are not allowed to change: ${forbiddenChanges.join(', ')}. Ticket creators cannot change status or priority; only the assigned user can update due date, and only admins can change assignment, escalation, or SLA configuration.`
+            error: `You are not allowed to change: ${forbiddenChanges.join(', ')}. Only the assigned employee can progress ticket status, and only admins can change priority, due date, assignment, escalation, or SLA configuration.`
           });
           return;
         }
@@ -2162,13 +2178,13 @@ app.get('/cron', async (req, res) => {
       // Prepare incremental updates
       const updates: Partial<ITicket> = {};
       if (status !== undefined) updates.status = status;
-      if (priority !== undefined) updates.priority = priority;
+      if (isAdminUser && priority !== undefined) updates.priority = priority;
       if (isAdminUser && assignedAgent !== undefined) updates.assignedAgent = assignedAgent;
       if (isAdminUser && assignedAgentEmail !== undefined) updates.assignedAgentEmail = assignedAgentEmail;
       if (isAdminUser && slaType !== undefined) updates.slaType = slaType;
       if (isAdminUser && slaDurationValue !== undefined) updates.slaDurationValue = parseInt(slaDurationValue);
       if (isAdminUser && slaDurationUnit !== undefined) updates.slaDurationUnit = slaDurationUnit;
-      if ((isAdminUser || isAssignedUser) && slaDueDate !== undefined) updates.slaDueDate = slaDueDate;
+      if (isAdminUser && slaDueDate !== undefined) updates.slaDueDate = slaDueDate;
       if (resolvedAt !== undefined) updates.resolvedAt = resolvedAt;
       if (isAdminUser && isEscalated !== undefined) updates.isEscalated = isEscalated;
 
