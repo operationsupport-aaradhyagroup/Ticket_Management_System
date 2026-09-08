@@ -178,11 +178,22 @@ export function wasTicketHistoricallyAssignedToUser(ticket: Ticket, user: { emai
     return false;
   }
 
-  const userNameLower = user.name.toLowerCase();
-  const historyEntries = [...(ticket.history || [])].reverse();
-  for (const entry of historyEntries) {
+  if (
+    (ticket.assignedAgentEmail || '').trim().toLowerCase() === user.email.trim().toLowerCase() ||
+    doesAssignedNameMatchUser(ticket.assignedAgent || '', user)
+  ) {
+    return true;
+  }
+
+  for (const entry of ticket.history || []) {
     const action = entry.action || '';
-    if (/Ticket escalated and reassigned to/i.test(action)) continue;
+    const breachAssignment = action.match(/Ticket breached while assigned to\s+(.+?)\s+\(([^)]+)\)/i);
+    if (breachAssignment) {
+      const [, assignedName, assignedEmail] = breachAssignment;
+      if (assignedEmail.trim().toLowerCase() === user.email.trim().toLowerCase() || doesAssignedNameMatchUser(assignedName, user)) {
+        return true;
+      }
+    }
 
     const explicitAssignmentMatch =
       action.match(/Assigned agent updated to '([^']+)'/i) ||
@@ -192,7 +203,9 @@ export function wasTicketHistoricallyAssignedToUser(ticket: Ticket, user: { emai
     const assignedName = explicitAssignmentMatch?.[1]?.trim();
     if (!assignedName || assignedName.toLowerCase() === 'unassigned') continue;
 
-    return doesAssignedNameMatchUser(assignedName, user);
+    if (doesAssignedNameMatchUser(assignedName, user)) {
+      return true;
+    }
   }
 
   return false;

@@ -966,6 +966,11 @@ async function startServer() {
         id: `hist-${crypto.randomUUID()}`,
         timestamp,
         userEmail: 'system',
+        action: `Ticket breached while assigned to ${ticket.assignedAgent || 'Unassigned'} (${ticket.assignedAgentEmail || 'no email'}) before escalation.`,
+      }, {
+        id: `hist-${crypto.randomUUID()}`,
+        timestamp,
+        userEmail: 'system',
         action: `Ticket automatically escalated and reassigned to ${recipient.label}.`
       }]
     };
@@ -2386,6 +2391,12 @@ app.get('/cron', async (req, res) => {
       // Save History Audit Logs
       const timestamp = new Date().toISOString();
       const historyEntries = [...(ticket.history || [])];
+      historyEntries.push({
+        id: `hist-${crypto.randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        userEmail: req.user?.email || 'system',
+        action: `Ticket breached while assigned to ${ticket.assignedAgent || 'Unassigned'} (${ticket.assignedAgentEmail || 'no email'}) before escalation.`
+      });
       historyEntries.push({
         id: 'hist-' + Date.now(),
         timestamp,
