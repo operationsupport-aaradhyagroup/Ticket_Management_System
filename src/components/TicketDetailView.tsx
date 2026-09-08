@@ -438,9 +438,6 @@ export default function TicketDetailView({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-2 border-b border-gray-50">
               <div className="min-w-0">
                 <h3 className="font-bold text-gray-800 text-sm">Live Chat</h3>
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Remarks, replies, and handoff notes between the ticket owner, assigner, and assigned employee.
-                </p>
               </div>
               <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-1 rounded-full">
                 {ticketRemarks.length} messages
@@ -503,7 +500,7 @@ export default function TicketDetailView({
           <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-xs space-y-3">
             <div className="flex items-center space-x-2 pb-2 border-b border-gray-50">
               <FileText className="w-4.5 h-4.5 text-gray-400" />
-              <h3 className="font-bold text-gray-800 text-sm">Complaint Operational Audit Logs</h3>
+              <h3 className="font-bold text-gray-800 text-sm">Ticket Audit Log</h3>
             </div>
 
             <div className="relative border-l border-gray-100 pl-4 ml-2.5 space-y-4 py-2">
