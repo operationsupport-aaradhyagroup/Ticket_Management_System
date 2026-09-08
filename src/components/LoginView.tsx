@@ -36,7 +36,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   };
 
   return (
-    <main className="relative flex min-h-[85vh] items-center justify-center overflow-hidden bg-slate-100 p-4 sm:p-6">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-100 p-4 sm:p-6">
       <div className="absolute inset-x-0 top-0 h-72 bg-gradient-to-b from-blue-950 to-slate-100" />
 
       <section className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
@@ -44,9 +44,12 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           <div className="mb-4 h-20 w-20 overflow-hidden rounded-2xl bg-white p-2 shadow-sm">
             <img src="/aaradhya-group-logo.png" alt="Aaradhya Group logo" className="h-full w-full object-contain" />
           </div>
-          <h1 className="max-w-sm text-2xl font-bold leading-tight">
-            Aaradhya Group Internal Ticket Management Tool
+          <h1 className="max-w-sm text-2xl font-bold uppercase tracking-wide leading-tight">
+            AARADHYA SERVICEDESK
           </h1>
+          <p className="mt-2 text-sm font-medium text-blue-100">
+            Simplifying Support. Accelerating Resolution.
+          </p>
         </header>
 
         <div className="p-6 sm:p-8">
@@ -107,6 +110,18 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           </form>
         </div>
       </section>
+
+      <p className="absolute bottom-4 text-center text-xs font-medium text-slate-500">
+        Developed &amp; Managed by{' '}
+        <a
+          href="https://www.nexoraautomations.com"
+          target="_blank"
+          rel="noreferrer"
+          className="text-blue-700 underline-offset-2 transition hover:underline"
+        >
+          Nexora Automations
+        </a>
+      </p>
     </main>
   );
 }
