@@ -692,7 +692,7 @@ export default function App() {
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen text-gray-800 antialiased font-sans flex flex-col">
+    <div className="h-screen overflow-hidden bg-gray-50 text-gray-800 antialiased font-sans flex flex-col">
       
       {/* 1. APP HERO HEADER BRAND */}
       <header className="text-white relative overflow-hidden shrink-0 shadow-[0_22px_56px_rgba(15,23,42,0.24)] bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.22)_0%,transparent_32%),radial-gradient(circle_at_top_right,rgba(34,211,238,0.18)_0%,transparent_28%),linear-gradient(135deg,#081120_0%,#101a32_46%,#13223c_100%)]">
@@ -907,7 +907,7 @@ export default function App() {
       </nav>
 
       {/* 3. CORE ROUTER APPLICATION VIEW SPACE */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full overflow-y-auto">
+      <main className={`max-w-7xl mx-auto min-h-0 flex-1 w-full px-4 py-6 sm:px-6 lg:px-8 ${activeTab === 'config' && currentUser?.role === 'Admin' ? 'overflow-y-auto xl:overflow-hidden' : 'overflow-y-auto'}`}>
         
         {/* Dynamic API status warning bar */}
         {apiError && (
@@ -936,7 +936,7 @@ export default function App() {
           />
         ) : (
           /* Main view Router tabs */
-          <div>
+          <div className={activeTab === 'config' && currentUser?.role === 'Admin' ? 'min-h-0 xl:h-full' : ''}>
             {(activeTab === 'all' || activeTab === 'raised' || activeTab === 'assigned' || activeTab === 'breached') && (
               <TicketList
                 tickets={visibleTickets}

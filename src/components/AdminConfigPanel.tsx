@@ -601,28 +601,32 @@ export default function AdminConfigPanel({
   };
 
   return (
-    <div className="settings-shell grid grid-cols-1 gap-6 xl:grid-cols-[290px_minmax(0,1fr)]" data-active-section={activeSettingsSection}>
+    <div className="settings-shell grid grid-cols-1 gap-4 xl:h-full xl:min-h-0 xl:grid-cols-[250px_minmax(0,1fr)]" data-active-section={activeSettingsSection}>
       <style>{`
         .settings-shell[data-active-section='organization'] .settings-section:not([data-settings-section='organization']),
         .settings-shell[data-active-section='employees'] .settings-section:not([data-settings-section='employees']),
         .settings-shell[data-active-section='escalation'] .settings-section:not([data-settings-section='escalation']),
         .settings-shell[data-active-section='integrations'] .settings-section:not([data-settings-section='integrations']),
         .settings-shell[data-active-section='system'] .settings-section:not([data-settings-section='system']) { display: none; }
-        @media (min-width: 768px) {
+        @media (min-width: 1280px) {
           .settings-shell[data-active-section='escalation'] .settings-left-column { display: none; }
           .settings-shell[data-active-section='escalation'] .settings-right-column { grid-column: 1 / -1; }
           .settings-shell[data-active-section='integrations'] .settings-left-column,
           .settings-shell[data-active-section='integrations'] .settings-right-column { display: none; }
           .settings-shell[data-active-section='system'] .settings-left-column { grid-column: 1 / -1; }
+          .settings-shell .settings-section { border-radius: 20px; padding: 1rem; }
+          .settings-shell .settings-content-grid { gap: 1rem; }
+          .settings-shell .integration-api-panel { gap: 1rem; }
+          .settings-shell .integration-api-panel > section { border-radius: 20px; padding: 1rem; }
         }
       `}</style>
-      <aside className="h-fit rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_18px_44px_rgba(15,23,42,0.06)] xl:sticky xl:top-5">
-        <div className="border-b border-slate-100 px-2 pb-5">
+      <aside className="h-fit rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] xl:self-start">
+        <div className="border-b border-slate-100 px-2 pb-4">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Admin Portal</p>
           <h2 className="mt-1 whitespace-nowrap text-base font-black text-slate-900">Settings &amp; Management</h2>
           <p className="mt-1 text-xs leading-relaxed text-slate-500">Select a block to show its settings.</p>
         </div>
-        <nav className="mt-3 grid gap-1.5" aria-label="Settings sections">
+        <nav className="mt-3 grid gap-1" aria-label="Settings sections">
           {[
             { id: 'organization', label: 'Organization & SLA', description: 'Departments and SLA rules', icon: Landmark },
             { id: 'employees', label: 'Employees', description: 'Accounts and password reset', icon: UserPlus },
@@ -631,18 +635,18 @@ export default function AdminConfigPanel({
             { id: 'system', label: 'System Controls', description: 'Ticket maintenance tools', icon: Database }
           ].map(({ id, label, description, icon: Icon }) => {
             const isActive = activeSettingsSection === id;
-            return <button key={id} type="button" onClick={() => setActiveSettingsSection(id as typeof activeSettingsSection)} className={`flex items-start gap-3 rounded-2xl px-3 py-3 text-left transition ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'}`}>
+            return <button key={id} type="button" onClick={() => setActiveSettingsSection(id as typeof activeSettingsSection)} className={`flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'}`}>
               <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? 'text-white' : 'text-blue-600'}`} />
               <span><span className="block text-sm font-bold">{label}</span><span className={`mt-0.5 block text-[11px] ${isActive ? 'text-blue-50' : 'text-slate-400'}`}>{description}</span></span>
             </button>;
           })}
         </nav>
       </aside>
-      <div className="min-w-0">
-        <div className="mb-5 rounded-[24px] border border-slate-200 bg-white px-5 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.04)]">
+      <div className="min-w-0 xl:flex xl:min-h-0 xl:flex-col">
+        <div className="mb-4 shrink-0 rounded-[20px] border border-slate-200 bg-white px-4 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.04)]">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">Settings &amp; Management</p>
           <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <h3 className="text-xl font-black text-slate-900">
+            <h3 className="text-lg font-black text-slate-900">
               {activeSettingsSection === 'organization' ? 'Organization & SLA' : activeSettingsSection === 'employees' ? 'Employee Management' : activeSettingsSection === 'escalation' ? 'Escalation Workflow' : activeSettingsSection === 'integrations' ? 'Integration & API' : 'System Controls'}
             </h3>
             <p className="text-xs text-slate-500">
@@ -650,10 +654,10 @@ export default function AdminConfigPanel({
             </p>
           </div>
         </div>
-    <div className="settings-content-grid grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div className="settings-content-grid grid grid-cols-1 gap-6 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-2 xl:grid-cols-[minmax(330px,0.85fr)_minmax(0,1.65fr)]">
       
       {/* 1. DEPARTMENTS PANEL & DB SYNC (Left 1/3) */}
-      <div className="settings-left-column space-y-6 md:col-span-1">
+      <div className="settings-left-column min-w-0 space-y-6">
         
         <div data-settings-section="organization" className="settings-section bg-white p-5 rounded-[26px] border border-slate-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
           <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -889,7 +893,7 @@ export default function AdminConfigPanel({
             type="text"
             value={employeeListSearch}
             onChange={(e) => setEmployeeListSearch(e.target.value)}
-            placeholder="Search employee list by name, email, ID, department, or designation"
+            placeholder="Search employees by name, email, ID, or department"
             className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-xs"
           />
         </div>
@@ -906,7 +910,7 @@ export default function AdminConfigPanel({
                   <div className="min-w-0 space-y-1">
                     <p className="text-sm font-semibold text-slate-800 break-words">{user.name}</p>
                     <p className="text-[10px] font-mono text-slate-400 break-all">{user.email}</p>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-[11px] leading-relaxed text-slate-500">
                       {(user.departmentName || 'No Department')} • {(user.designation || 'No Designation')} • {(user.employeeId || 'No Employee ID')}
                     </p>
                   </div>
@@ -998,7 +1002,7 @@ export default function AdminConfigPanel({
       </div>
       </div>
 
-      <div className="settings-right-column md:col-span-2 flex flex-col gap-6">
+      <div className="settings-right-column min-w-0 flex flex-col gap-6">
       <div data-settings-section="employees" className="settings-section order-2 bg-white p-5 rounded-[26px] border border-gray-200 shadow-[0_18px_44px_rgba(15,23,42,0.06)] space-y-4">
         <div className="flex items-center space-x-3 pb-3 border-b border-gray-50">
           <div className="rounded-2xl bg-emerald-50 p-2 text-emerald-600">
