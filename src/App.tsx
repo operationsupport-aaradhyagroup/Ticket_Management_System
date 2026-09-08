@@ -984,7 +984,6 @@ export default function App() {
               companyUsers={companyUsers}
             onClose={() => setSelectedTicketId(null)}
             onUpdateTicket={handleUpdateTicketInput}
-            sentEmails={sentEmails}
           />
         ) : (
           /* Main view Router tabs */

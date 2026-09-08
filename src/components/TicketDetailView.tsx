@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Ticket, TicketStatus, SLAStatus, SLAUnit, UserSession, TicketPriority, SentEmail, TicketRemarkItem } from '../types';
+import { Ticket, TicketStatus, SLAStatus, SLAUnit, UserSession, TicketPriority, TicketRemarkItem } from '../types';
 import { formatSLACountdown, computeSLAStatus, calculateDueDate, formatDateTime } from '../utils';
-import { X, Clock, User, ShieldAlert, ArrowLeft, Send, CheckCircle2, RefreshCw, FileText, Mail } from 'lucide-react';
+import { X, Clock, User, ShieldAlert, ArrowLeft, Send, CheckCircle2, RefreshCw, FileText } from 'lucide-react';
 
 interface TicketDetailViewProps {
   ticket: Ticket;
@@ -11,7 +11,6 @@ interface TicketDetailViewProps {
   companyUsers: UserSession[];
   onClose: () => void;
   onUpdateTicket: (updatedTicket: Ticket) => Promise<boolean>;
-  sentEmails?: SentEmail[];
 }
 
 const withoutEmailAddresses = (text: string) =>
@@ -27,8 +26,7 @@ export default function TicketDetailView({
   isAdmin,
   companyUsers,
   onClose,
-  onUpdateTicket,
-  sentEmails = []
+  onUpdateTicket
 }: TicketDetailViewProps) {
   const toDateTimeLocalInput = (value: string) => {
     const date = new Date(value);
@@ -84,11 +82,6 @@ export default function TicketDetailView({
   const countdown = useMemo(() => {
     return formatSLACountdown(ticket.slaDueDate, referenceTime, ticketStatus);
   }, [ticket.slaDueDate, referenceTime, ticketStatus]);
-
-  // Match corresponding simulated escalation email if sent
-  const escalatedEmail = useMemo(() => {
-    return sentEmails.find(e => e.ticketId === ticket.id);
-  }, [ticket.id, sentEmails]);
 
   const assignedAgentRecord = useMemo(() => {
     return companyUsers.find(u => u.name === assignedAgent || u.email === ticket.assignedAgentEmail);
@@ -389,49 +382,6 @@ export default function TicketDetailView({
               </div>
             )}
           </div>
-
-          {/* Escalation audit log */}
-          {ticket.isEscalated && (
-            <div className="bg-indigo-50/80 border border-indigo-200 p-4 sm:p-6 rounded-2xl shadow-xs space-y-4">
-              <div className="flex items-center space-x-2 text-indigo-950 font-bold text-sm">
-                <Mail className="w-5 h-5 text-indigo-600 animate-pulse" />
-                <span>Escalation Audit Log</span>
-              </div>
-              <p className="text-xs text-indigo-700 leading-normal">
-                This complaint was escalated and the designated escalation owner was notified according to the configured workflow.
-              </p>
-              
-              <div className="bg-white p-4 rounded-xl border border-indigo-100 text-xs space-y-2">
-                <div className="flex flex-col gap-1 sm:flex-row sm:justify-between border-b border-gray-100 pb-1.5 text-gray-500">
-                  <span>Escalation Owner:</span>
-                  <span className="font-semibold text-gray-800">
-                    {escalatedEmail?.toName || `${ticket.departmentName} Escalation Owner`}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-1 sm:flex-row sm:justify-between border-b border-gray-100 pb-1.5 text-gray-500">
-                  <span>Delivery Status:</span>
-                  <span className="font-extrabold text-indigo-700 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping"></span>
-                    Notification recorded and routed
-                  </span>
-                </div>
-                <div className="pt-1.5 text-gray-500">
-                  <span className="block font-medium mb-1">Professional Subject:</span>
-                  <span className="block italic text-[11px] font-mono text-gray-850 p-2 bg-gray-50 rounded border border-gray-100">
-                    {escalatedEmail?.subject || `[URGENT ESCALATION] ${ticket.id} SLA Limit Triggered - ${ticket.title}`}
-                  </span>
-                </div>
-                {escalatedEmail && (
-                  <div className="pt-1 text-gray-500">
-                    <span className="block font-medium mb-1">Recorded Message:</span>
-                    <pre className="block text-[10px] font-mono text-gray-700 p-2.5 bg-gray-50 rounded border border-gray-100 whitespace-pre-wrap max-h-[140px] overflow-y-auto">
-                      {escalatedEmail.body}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Form: Force Custom SLA Override Panel */}
           {showSlaOverride && isAdmin && (
