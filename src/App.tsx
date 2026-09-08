@@ -709,7 +709,7 @@ export default function App() {
           
           {/* Logo & Headline */}
           <div className="flex min-w-0 items-start sm:items-center gap-3 sm:gap-4 xl:flex-1">
-            <div className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-[22px] bg-white/96 p-1.5 shadow-[0_16px_42px_rgba(15,23,42,0.34)] ring-1 ring-white/20 flex items-center justify-center overflow-hidden">
+            <div className="h-14 w-14 sm:h-16 sm:w-16 shrink-0 rounded-[22px] bg-white p-1.5 shadow-[0_16px_42px_rgba(15,23,42,0.34)] ring-1 ring-white/20 flex items-center justify-center overflow-hidden">
               <img
                 src="/aaradhya-group-logo.png"
                 alt="Aaradhya Group logo"
@@ -717,9 +717,9 @@ export default function App() {
               />
             </div>
             <div className="min-w-0">
-              <h1 className="text-[1.26rem] sm:text-[1.52rem] md:text-[1.98rem] font-black tracking-[-0.045em] leading-[1.02] text-white max-w-2xl">
-                AARADHYA GROUP
-                <span className="mt-1 block font-semibold">(Internal Ticket Management System)</span>
+              <h1 className="text-base sm:text-lg md:text-xl font-black tracking-[-0.025em] leading-tight text-white">
+                AARADHYA SERVICEDESK
+                <span className="mt-0.5 block text-[11px] sm:text-xs font-medium tracking-normal text-blue-100">Simplifying Support. Accelerating Resolution.</span>
               </h1>
             </div>
           </div>
@@ -734,7 +734,7 @@ export default function App() {
             >
               <span className={`w-2.5 h-2.5 rounded-full shadow-[0_0_14px_currentColor] ${currentUser?.role === 'Admin' ? 'bg-emerald-400 text-emerald-400' : 'bg-blue-400 text-blue-400'}`} />
               <div className="text-left font-mono leading-none">
-                <span className="block text-[9px] text-slate-400 uppercase tracking-[0.14em]">Authenticated {currentUser?.role}</span>
+                <span className="block text-[9px] text-slate-400 uppercase tracking-[0.14em]">Signed in as</span>
                 <span className="font-semibold text-[13px] text-white">{currentUser?.name}</span>
               </div>
             </button>
@@ -879,22 +879,17 @@ export default function App() {
 
           <div className="flex items-center justify-between sm:justify-end space-x-4">
             {currentUser?.role === 'Admin' && (
-              <div
-                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold ${
-                  dbType === 'MongoDB' && !apiError
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-rose-200 bg-rose-50 text-rose-700'
-                }`}
+              <span
                 title={dbType === 'MongoDB' && !apiError ? 'MongoDB connected' : 'MongoDB not connected'}
                 role="status"
+                aria-label={dbType === 'MongoDB' && !apiError ? 'MongoDB connected' : 'MongoDB not connected'}
               >
                 <span
-                  className={`h-2.5 w-2.5 rounded-full ${
+                  className={`inline-block h-2.5 w-2.5 rounded-full shadow-sm ${
                     dbType === 'MongoDB' && !apiError ? 'bg-emerald-500' : 'bg-rose-500'
                   }`}
                 />
-                <span>{dbType === 'MongoDB' && !apiError ? 'MongoDB Connected' : 'MongoDB Not Connected'}</span>
-              </div>
+              </span>
             )}
 
             <button
@@ -1017,7 +1012,7 @@ export default function App() {
       />
 
       {/* FOOTER */}
-      <footer className="relative overflow-hidden border-t border-white/10 bg-[radial-gradient(circle_at_bottom_left,rgba(59,130,246,0.18)_0%,transparent_30%),radial-gradient(circle_at_bottom_right,rgba(34,211,238,0.14)_0%,transparent_28%),linear-gradient(135deg,#081120_0%,#101a32_46%,#13223c_100%)] py-5 shrink-0">
+      <footer className="relative overflow-hidden border-t border-white/10 bg-[radial-gradient(circle_at_bottom_left,rgba(59,130,246,0.18)_0%,transparent_30%),radial-gradient(circle_at_bottom_right,rgba(34,211,238,0.14)_0%,transparent_28%),linear-gradient(135deg,#081120_0%,#101a32_46%,#13223c_100%)] py-2 shrink-0">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-0 right-0 left-0 bg-gradient-to-r from-cyan-400 via-blue-500 to-sky-400 h-[2px]" />
           <div className="absolute -left-16 bottom-0 h-28 w-28 rounded-full bg-blue-500/14 blur-3xl" />
@@ -1025,15 +1020,8 @@ export default function App() {
           <div className="absolute inset-0 opacity-[0.055] [background-image:linear-gradient(rgba(255,255,255,0.8)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.8)_1px,transparent_1px)] [background-size:38px_38px]" />
         </div>
         <div className="relative mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 text-center sm:flex-row sm:px-6 lg:px-8 sm:text-left">
-          <div className="space-y-1">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-300">
-              Aaradhya Group Ticket Management System
-            </p>
-            <p className="text-xs text-slate-400">
-              Active backend persistent store connected successfully.
-            </p>
-          </div>
-          <div className="rounded-full border border-white/10 bg-slate-900/34 px-4 py-2.5 text-[11px] font-semibold text-slate-200 shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl">
+          <div />
+          <div className="rounded-full border border-white/10 bg-slate-900/34 px-4 py-1.5 text-[11px] font-semibold text-slate-200 shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl">
             Developed &amp; Managed by <span className="text-cyan-300">Nexora Automations</span>
           </div>
         </div>
