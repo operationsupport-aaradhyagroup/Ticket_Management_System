@@ -74,7 +74,7 @@ const sanitizeUser = (user: IUser) => ({
 });
 
 type NotificationType = 'Assignment' | 'Escalation' | 'Closure';
-type PushNotificationType = NotificationType | 'Reminder';
+type PushNotificationType = NotificationType | 'Reminder' | 'Chat';
 
 const escapeHtml = (value: string) =>
   value
@@ -555,14 +555,16 @@ const sendPushForTicketEvent = async ({
     Assignment: 'New Ticket Assigned',
     Escalation: 'Ticket Escalated',
     Closure: 'Ticket Closed',
-    Reminder: 'Pending Ticket Reminder'
+    Reminder: 'Pending Ticket Reminder',
+    Chat: 'New Ticket Message'
   };
 
   const baseContentMap: Record<PushNotificationType, string> = {
     Assignment: `${ticket.id} has been assigned to ${recipientName}.`,
     Escalation: `${ticket.id} needs immediate escalation attention.`,
     Closure: `${ticket.id} has been closed.`,
-    Reminder: `${ticket.id} is still pending action.`
+    Reminder: `${ticket.id} is still pending action.`,
+    Chat: `You have a new message on ${ticket.id}.`
   };
 
   await sendPushViaOneSignal({
@@ -2244,6 +2246,38 @@ app.get('/cron', async (req, res) => {
           recipientEmail: updated.assignedAgentEmail || '',
           recipientName: updated.assignedAgent || 'Assigned Employee'
         });
+      }
+
+      const newRemarks = remarks === undefined
+        ? []
+        : (remarks as ITicket['remarks'] || []).slice((existingTicket.remarks || []).length);
+
+      if (newRemarks.length > 0) {
+        const users = await dbActions.getUsers();
+        const participants = new Map<string, string>();
+        const addParticipant = (email?: string, name?: string) => {
+          const normalizedEmail = (email || '').trim().toLowerCase();
+          if (!normalizedEmail || normalizedEmail === 'system' || normalizedEmail.startsWith('integration:')) return;
+          participants.set(normalizedEmail, name || users.find((user) => user.email.toLowerCase() === normalizedEmail)?.name || normalizedEmail);
+        };
+
+        addParticipant(updated.creatorEmail, updated.creatorName);
+        addParticipant(updated.assignedAgentEmail, updated.assignedAgent);
+        for (const remark of existingTicket.remarks || []) addParticipant(remark.userEmail, remark.userName);
+        for (const entry of existingTicket.history || []) addParticipant(entry.userEmail);
+
+        for (const remark of newRemarks) {
+          for (const [recipientEmail, recipientName] of participants) {
+            if (recipientEmail === remark.userEmail.toLowerCase().trim()) continue;
+            await sendPushForTicketEvent({
+              type: 'Chat',
+              ticket: updated,
+              recipientEmail,
+              recipientName,
+              extraContent: `${remark.userName} sent a new message.`
+            });
+          }
+        }
       }
 
       res.json({ ticket: updated, email: closureEmail });

@@ -35,7 +35,11 @@ test('canonical service forces supplied trusted source', async () => { const tic
 test('canonical service normalizes priority', async () => { const ticket = await createTicket({ ...validInput(), priority: 'high' }, deps()); assert.equal(ticket.priority, 'High'); });
 test('canonical service assigns an active employee', async () => { const ticket = await createTicket({ ...validInput(), assignedTo: agent.email }, deps()); assert.equal(ticket.assignedAgentEmail, agent.email); });
 test('canonical service rejects malformed email', async () => assert.rejects(() => createTicket({ ...validInput(), requester: { name: 'A', email: 'bad' } }, deps()), TicketValidationError));
-test('canonical service rejects short subject', async () => assert.rejects(() => createTicket({ ...validInput(), subject: 'x' }, deps()), TicketValidationError));
+test('canonical service accepts single-character subject and description', async () => {
+  const ticket = await createTicket({ ...validInput(), subject: 'x', description: 'x' }, deps());
+  assert.equal(ticket.title, 'x');
+  assert.equal(ticket.description, 'x');
+});
 test('canonical service rejects invalid department', async () => assert.rejects(() => createTicket({ ...validInput(), departmentId: 'missing' }, deps()), TicketValidationError));
 test('canonical service rejects invalid priority', async () => assert.rejects(() => createTicket({ ...validInput(), priority: 'urgent' }, deps()), TicketValidationError));
 test('canonical service rejects unsafe custom field keys', async () => assert.rejects(() => createTicket({ ...validInput(), customFields: { '$where': 'x' } }, deps()), TicketValidationError));

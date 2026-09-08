@@ -69,8 +69,8 @@ export async function createTicket(input: CreateTicketInput, deps: TicketService
   const requesterEmail = cleanText(input.requester?.email, 254).toLowerCase();
   const requesterPhone = cleanText(input.requester?.phone, 30);
   const errors: string[] = [];
-  if (subject.length < 3) errors.push('subject must contain at least 3 characters.');
-  if (description.length < 3) errors.push('description must contain at least 3 characters.');
+  if (!subject) errors.push('subject is required.');
+  if (!description) errors.push('description is required.');
   if (input.source !== 'ZOHO_DESK' && (!requesterEmail || !isEmail(requesterEmail))) errors.push('requester.email must be a valid email address.');
   if (input.source !== 'ZOHO_DESK' && !requesterName) errors.push('requester.name is required.');
   const normalizedPriority = allowedPriorities[String(input.priority || 'medium').toLowerCase()];
