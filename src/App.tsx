@@ -760,7 +760,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-gray-50 text-gray-800 antialiased font-sans flex flex-col">
+    <div className="h-[100dvh] overflow-hidden bg-gray-50 text-gray-800 antialiased font-sans flex flex-col">
       
       {/* 1. APP HERO HEADER BRAND */}
       <header className="text-white relative overflow-hidden shrink-0 shadow-[0_22px_56px_rgba(15,23,42,0.24)] bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.22)_0%,transparent_32%),radial-gradient(circle_at_top_right,rgba(34,211,238,0.18)_0%,transparent_28%),linear-gradient(135deg,#081120_0%,#101a32_46%,#13223c_100%)]">
@@ -773,11 +773,11 @@ export default function App() {
           <div className="absolute inset-0 opacity-[0.055] [background-image:linear-gradient(rgba(255,255,255,0.8)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.8)_1px,transparent_1px)] [background-size:38px_38px]" />
           <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/12 to-transparent" />
         </div>
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="relative mx-auto flex max-w-7xl items-center justify-between gap-3 px-3 py-2.5 sm:px-6 sm:py-4 lg:px-8">
           
           {/* Logo & Headline */}
-          <div className="flex min-w-0 items-start sm:items-center gap-3 sm:gap-4 xl:flex-1">
-            <div className="h-12 w-12 sm:h-14 sm:w-14 shrink-0 rounded-[18px] bg-white p-1.5 shadow-[0_16px_42px_rgba(15,23,42,0.34)] ring-1 ring-white/20 flex items-center justify-center overflow-hidden">
+          <div className="flex min-w-0 items-center gap-2.5 sm:gap-4 xl:flex-1">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-1.5 shadow-[0_16px_42px_rgba(15,23,42,0.34)] ring-1 ring-white/20 sm:h-14 sm:w-14 sm:rounded-[18px]">
               <img
                 src="/aaradhya-group-logo.png"
                 alt="Aaradhya Group logo"
@@ -785,32 +785,32 @@ export default function App() {
               />
             </div>
             <div className="min-w-0">
-              <h1 className="text-base sm:text-lg md:text-xl font-black tracking-[-0.025em] leading-tight text-white">
+              <h1 className="text-[15px] font-black leading-tight tracking-[-0.025em] text-white sm:text-lg md:text-xl">
                 Aaradhya Service Desk
-                <span className="mt-0.5 block text-[11px] sm:text-xs font-medium tracking-normal text-blue-100">Simplifying Support. Accelerating Resolution.</span>
+                <span className="mt-0.5 hidden text-xs font-medium tracking-normal text-blue-100 sm:block">Simplifying Support. Accelerating Resolution.</span>
               </h1>
             </div>
           </div>
 
           {/* Active account controls */}
-          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 xl:justify-end xl:pl-4">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3 xl:justify-end xl:pl-4">
             {/* Current Active Account Card */}
             <button
               onClick={() => setIsProfileModalOpen(true)}
-              className="w-full sm:w-auto bg-slate-900/34 px-4 py-3 rounded-[24px] flex items-center gap-3 border border-white/10 text-xs text-white shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl text-left transition hover:bg-slate-700/40 hover:border-cyan-300/25"
+              className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/34 px-2.5 py-2 text-left text-xs text-white shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl transition hover:border-cyan-300/25 hover:bg-slate-700/40 sm:gap-3 sm:px-4 sm:py-3 sm:rounded-[24px]"
               title="Open profile details"
             >
               <span className={`w-2.5 h-2.5 rounded-full shadow-[0_0_14px_currentColor] ${currentUser?.role === 'Admin' ? 'bg-emerald-400 text-emerald-400' : 'bg-blue-400 text-blue-400'}`} />
               <div className="text-left font-mono leading-none">
-                <span className="block text-[9px] text-slate-400 uppercase tracking-[0.14em]">Signed in as</span>
-                <span className="font-semibold text-[13px] text-white">{currentUser?.name}</span>
+                <span className="hidden text-[9px] uppercase tracking-[0.14em] text-slate-400 sm:block">Signed in as</span>
+                <span className="block max-w-24 truncate text-[12px] font-semibold text-white sm:max-w-none sm:text-[13px]">{currentUser?.name}</span>
               </div>
             </button>
 
             {/* Logout anchor */}
             <button
               onClick={handleLogout}
-              className="self-end sm:self-auto p-3 bg-slate-900/34 hover:bg-rose-950/55 text-slate-400 hover:text-rose-300 hover:border-rose-900/60 border border-white/10 rounded-[24px] transition-all shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl"
+              className="rounded-2xl border border-white/10 bg-slate-900/34 p-2.5 text-slate-400 shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl transition-all hover:border-rose-900/60 hover:bg-rose-950/55 hover:text-rose-300 sm:rounded-[24px] sm:p-3"
               title="Logout session and change user"
             >
               <LogOut className="w-4.5 h-4.5" />
@@ -823,9 +823,9 @@ export default function App() {
 
       {/* 2. TAB TOGGLES / TOP LEVEL DIRECTORY BAR */}
       <nav id="nav-tabs" className="bg-white border-b border-gray-200 shrink-0">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col gap-2 sm:gap-0 sm:flex-row justify-between sm:items-center py-2 sm:h-14">
+        <div className="mx-auto flex h-12 max-w-7xl items-center gap-2 px-3 sm:h-14 sm:px-6 lg:px-8">
           
-          <div className="flex space-x-2 md:space-x-4 h-full overflow-x-auto">
+          <div className="scrollbar-hide flex h-full min-w-0 flex-1 space-x-1.5 overflow-x-auto sm:space-x-2 md:space-x-4">
             {/* 1. All Complaints (Admin Only) */}
             {currentUser?.role === 'Admin' && (
               <button
@@ -834,7 +834,7 @@ export default function App() {
                   setActiveTab('all');
                   setSelectedTicketId(null);
                 }}
-                className={`px-3 h-full flex items-center space-x-2 text-xs font-bold border-b-2 transition-all shrink-0 ${
+                className={`h-full shrink-0 px-2.5 flex items-center space-x-2 text-xs font-bold border-b-2 transition-all sm:px-3 ${
                   activeTab === 'all' && !selectedTicketId
                     ? 'border-blue-600 text-blue-600 font-extrabold'
                     : 'border-transparent text-gray-500 hover:text-gray-900'
@@ -853,7 +853,7 @@ export default function App() {
                   setActiveTab('raised');
                   setSelectedTicketId(null);
                 }}
-                className={`px-3 h-full flex items-center space-x-2 text-xs font-bold border-b-2 transition-all shrink-0 ${
+                className={`h-full shrink-0 px-2.5 flex items-center space-x-2 text-xs font-bold border-b-2 transition-all sm:px-3 ${
                   activeTab === 'raised' && !selectedTicketId
                     ? 'border-blue-600 text-blue-600 font-extrabold'
                     : 'border-transparent text-gray-500 hover:text-gray-900'
@@ -872,7 +872,7 @@ export default function App() {
                   setActiveTab('assigned');
                   setSelectedTicketId(null);
                 }}
-                className={`px-3 h-full flex items-center space-x-2 text-xs font-bold border-b-2 transition-all shrink-0 ${
+                className={`h-full shrink-0 px-2.5 flex items-center space-x-2 text-xs font-bold border-b-2 transition-all sm:px-3 ${
                   activeTab === 'assigned' && !selectedTicketId
                     ? 'border-blue-600 text-blue-600 font-extrabold'
                     : 'border-transparent text-gray-500 hover:text-gray-900'
@@ -890,7 +890,7 @@ export default function App() {
                   setActiveTab('breached');
                   setSelectedTicketId(null);
                 }}
-                className={`px-3 h-full flex items-center space-x-2 text-xs font-bold border-b-2 transition-all shrink-0 ${
+                className={`h-full shrink-0 px-2.5 flex items-center space-x-2 text-xs font-bold border-b-2 transition-all sm:px-3 ${
                   activeTab === 'breached' && !selectedTicketId
                     ? 'border-blue-600 text-blue-600 font-extrabold'
                     : 'border-transparent text-gray-500 hover:text-gray-900'
@@ -914,7 +914,7 @@ export default function App() {
                   setActiveTab('dashboard');
                   setSelectedTicketId(null);
                 }}
-                className={`px-3 h-full flex items-center space-x-2 text-xs font-bold border-b-2 transition-all shrink-0 ${
+                className={`h-full shrink-0 px-2.5 flex items-center space-x-2 text-xs font-bold border-b-2 transition-all sm:px-3 ${
                   activeTab === 'dashboard'
                     ? 'border-blue-600 text-blue-600 font-extrabold'
                     : 'border-transparent text-gray-500 hover:text-gray-900'
@@ -945,7 +945,7 @@ export default function App() {
             )}
           </div>
 
-          <div className="flex items-center justify-between sm:justify-end space-x-4">
+          <div className="hidden shrink-0 items-center justify-end space-x-4 sm:flex">
             {currentUser?.role === 'Admin' && (
               <span
                 title={dbType === 'MongoDB' && !apiError ? 'MongoDB connected' : 'MongoDB not connected'}
@@ -975,7 +975,7 @@ export default function App() {
       </nav>
 
       {/* 3. CORE ROUTER APPLICATION VIEW SPACE */}
-      <main className={`max-w-7xl mx-auto min-h-0 flex-1 w-full px-4 py-6 sm:px-6 lg:px-8 ${activeTab === 'config' && currentUser?.role === 'Admin' ? 'overflow-y-auto xl:overflow-hidden' : 'overflow-y-auto'}`}>
+      <main className={`max-w-7xl mx-auto min-h-0 flex-1 w-full px-3 py-3 sm:px-6 sm:py-6 lg:px-8 ${activeTab === 'config' && currentUser?.role === 'Admin' ? 'overflow-y-auto xl:overflow-hidden' : 'overflow-y-auto'}`}>
         
         {/* Dynamic API status warning bar */}
         {apiError && (
@@ -1078,7 +1078,7 @@ export default function App() {
       />
 
       {/* FOOTER */}
-      <footer className="relative overflow-hidden border-t border-white/10 bg-[radial-gradient(circle_at_bottom_left,rgba(59,130,246,0.18)_0%,transparent_30%),radial-gradient(circle_at_bottom_right,rgba(34,211,238,0.14)_0%,transparent_28%),linear-gradient(135deg,#081120_0%,#101a32_46%,#13223c_100%)] py-2 shrink-0">
+      <footer className="relative shrink-0 overflow-hidden border-t border-white/10 bg-[radial-gradient(circle_at_bottom_left,rgba(59,130,246,0.18)_0%,transparent_30%),radial-gradient(circle_at_bottom_right,rgba(34,211,238,0.14)_0%,transparent_28%),linear-gradient(135deg,#081120_0%,#101a32_46%,#13223c_100%)] py-1.5 sm:py-2">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-0 right-0 left-0 bg-gradient-to-r from-cyan-400 via-blue-500 to-sky-400 h-[2px]" />
           <div className="absolute -left-16 bottom-0 h-28 w-28 rounded-full bg-blue-500/14 blur-3xl" />
@@ -1087,7 +1087,7 @@ export default function App() {
         </div>
         <div className="relative mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 text-center sm:flex-row sm:px-6 lg:px-8 sm:text-left">
           <div />
-          <div className="rounded-full border border-white/10 bg-slate-900/34 px-4 py-1.5 text-[11px] font-semibold text-slate-200 shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl">
+          <div className="rounded-full border border-white/10 bg-slate-900/34 px-3 py-1 text-[10px] font-semibold text-slate-200 shadow-[0_18px_44px_rgba(15,23,42,0.18)] backdrop-blur-xl sm:px-4 sm:py-1.5 sm:text-[11px]">
             Developed &amp; Managed by <span className="text-cyan-300">Nexora Automations</span>
           </div>
         </div>

@@ -23,6 +23,10 @@ export default function TicketList({
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedSlaStatus, setSelectedSlaStatus] = useState<string>('all');
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+
+  const activeFilterCount = [selectedDeptId, selectedStatus, selectedSlaStatus, selectedPriority]
+    .filter((value) => value !== 'all').length;
 
   const handleDeptFilterChange = (deptId: string) => {
     setSelectedDeptId(deptId);
@@ -115,7 +119,7 @@ export default function TicketList({
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {/* Header operations */}
-      <div className="p-4 sm:p-5 border-b border-gray-50 flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gray-50/50">
+      <div className="flex flex-col gap-3 border-b border-gray-50 bg-gray-50/50 p-3 sm:p-5 md:flex-row md:items-center md:justify-between md:gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -128,11 +132,11 @@ export default function TicketList({
           />
         </div>
         
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <div className="flex items-center gap-2 sm:flex-row sm:items-center">
           <button
             id="btn-clear-filters"
             onClick={clearFilters}
-            className="px-3.5 py-2 border border-gray-200 rounded-xl text-xs text-gray-500 hover:bg-gray-100 transition-colors flex items-center justify-center space-x-1"
+            className="shrink-0 px-3.5 py-2 border border-gray-200 rounded-xl text-xs text-gray-500 hover:bg-gray-100 transition-colors flex items-center justify-center space-x-1"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Reset</span>
@@ -141,7 +145,7 @@ export default function TicketList({
           <button
             id="btn-open-create-ticket"
             onClick={onOpenCreateTicket}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-all shadow-xs flex items-center justify-center space-x-1.5"
+            className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-all shadow-xs flex items-center justify-center space-x-1.5 sm:flex-none sm:px-4"
           >
             <Play className="w-4 h-4" />
             <span>Create Complaint Ticket</span>
@@ -149,8 +153,47 @@ export default function TicketList({
         </div>
       </div>
 
-      {/* Advanced Filter row */}
-      <div className="p-4 bg-white border-b border-gray-50 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+      {/* Compact mobile filter drawer */}
+      <div className="border-b border-gray-50 bg-white p-3 sm:hidden">
+        <button
+          type="button"
+          onClick={() => setMobileFiltersOpen((open) => !open)}
+          className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+          aria-expanded={mobileFiltersOpen}
+        >
+          <span className="flex items-center gap-2"><Filter className="h-4 w-4 text-blue-600" />Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</span>
+          <span className="text-[11px] font-medium text-blue-600">{mobileFiltersOpen ? 'Hide' : 'Show'}</span>
+        </button>
+
+        {mobileFiltersOpen && (
+          <div className="mt-3 grid grid-cols-2 gap-2.5">
+            <label className="block min-w-0 text-[10px] font-medium uppercase tracking-wider text-gray-400">Department
+              <select value={selectedDeptId} onChange={(e) => handleDeptFilterChange(e.target.value)} className="mt-1 w-full truncate rounded-lg border border-gray-200 bg-white p-2 text-xs text-gray-700 focus:border-blue-500 focus:outline-hidden">
+                <option value="all">All Departments</option>
+                {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+              </select>
+            </label>
+            <label className="block min-w-0 text-[10px] font-medium uppercase tracking-wider text-gray-400">Status
+              <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-xs text-gray-700 focus:border-blue-500 focus:outline-hidden">
+                <option value="all">All Statuses</option><option value="Open">Open</option><option value="Resolved">Submit For Signoff</option><option value="Closed">Signoff</option>
+              </select>
+            </label>
+            <label className="block min-w-0 text-[10px] font-medium uppercase tracking-wider text-gray-400">SLA status
+              <select value={selectedSlaStatus} onChange={(e) => setSelectedSlaStatus(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-xs text-gray-700 focus:border-blue-500 focus:outline-hidden">
+                <option value="all">All SLA States</option><option value="Within SLA">Within SLA</option><option value="Near SLA Breach">Near Breach</option><option value="SLA Breached">SLA Breached</option>
+              </select>
+            </label>
+            <label className="block min-w-0 text-[10px] font-medium uppercase tracking-wider text-gray-400">Priority
+              <select value={selectedPriority} onChange={(e) => setSelectedPriority(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-xs text-gray-700 focus:border-blue-500 focus:outline-hidden">
+                <option value="all">All Priorities</option><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Critical">Critical</option>
+              </select>
+            </label>
+          </div>
+        )}
+      </div>
+
+      {/* Tablet and desktop filter row */}
+      <div className="hidden grid-cols-2 gap-3 border-b border-gray-50 bg-white p-4 sm:grid xl:grid-cols-4">
         {/* Department */}
         <div>
           <label className="block text-[11px] font-medium text-gray-400 uppercase tracking-widest mb-1">Department</label>
@@ -243,7 +286,7 @@ export default function TicketList({
                 key={t.id}
                 type="button"
                 onClick={() => onSelectTicket(t)}
-                className="w-full p-4 text-left hover:bg-blue-50/20 transition-colors space-y-3"
+                className="w-full space-y-3 p-3 text-left transition-colors hover:bg-blue-50/20 sm:p-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-1">
