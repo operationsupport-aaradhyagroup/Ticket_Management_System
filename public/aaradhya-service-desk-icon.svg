@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="104" fill="#0f2348"/>
+  <rect x="36" y="36" width="440" height="440" rx="82" fill="#ffffff"/>
+  <image href="/aaradhya-group-logo.png" x="56" y="129" width="400" height="230" preserveAspectRatio="xMidYMid meet"/>
+  <text x="256" y="420" fill="#0f2348" font-family="Arial, sans-serif" font-size="31" font-weight="700" text-anchor="middle">SERVICE DESK</text>
+</svg>

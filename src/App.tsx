@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import OneSignalNative from '@onesignal/capacitor-plugin';
 import { ComplaintCategory, CreateTicketPayload, CreateUserPayload, Department, EscalationRule, SentEmail, SLAStatus, SLAUnit, Ticket, TicketPriority, TicketStatus, UserSession } from './types';
 import { computeSLAStatus, isTicketAssignedToUser, isTicketRaisedByUser, wasTicketHistoricallyAssignedToUser } from './utils';
 
@@ -196,6 +198,16 @@ export default function App() {
         const config = await configRes.json();
         if (!config.enabled || !config.appId) return;
 
+        const externalId = currentUser.email.toLowerCase().trim();
+
+        if (Capacitor.isNativePlatform()) {
+          await OneSignalNative.initialize(config.appId);
+          await OneSignalNative.login(externalId);
+          await OneSignalNative.Notifications.requestPermission(false);
+          oneSignalInitRef.current = true;
+          return;
+        }
+
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async function (OneSignal: any) {
           if (cancelled) return;
@@ -203,10 +215,10 @@ export default function App() {
           await OneSignal.init({
             appId: config.appId,
             allowLocalhostAsSecureOrigin: true,
-            serviceWorkerPath: '/OneSignalSDKWorker.js',
+            serviceWorkerPath: '/service-worker.js',
           });
 
-          await OneSignal.login(currentUser.email.toLowerCase().trim());
+          await OneSignal.login(externalId);
 
           const promptKey = `onesignal_prompted_${currentUser.email.toLowerCase().trim()}`;
           const shouldPrompt = !localStorage.getItem(promptKey);
@@ -240,6 +252,9 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (Capacitor.isNativePlatform()) {
+      void OneSignalNative.logout().catch((error) => console.warn('OneSignal native logout failed', error));
+    }
     localStorage.removeItem('sla_token');
     localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
     setToken(null);

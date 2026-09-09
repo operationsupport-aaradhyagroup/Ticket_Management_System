@@ -1,0 +1,24 @@
+{
+  "name": "Aaradhya Service Desk",
+  "short_name": "Service Desk",
+  "description": "Aaradhya Service Desk ticket management portal.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f9fc",
+  "theme_color": "#0f2348",
+  "icons": [
+    {
+      "src": "/aaradhya-service-desk-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/aaradhya-group-logo.png",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
